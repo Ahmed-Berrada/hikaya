@@ -13,6 +13,10 @@ Everything (audio, transcripts, learned data) stays on hardware you own. Nothing
 Languages: English, French, and mixed EN/FR (code-switching). LLM work (cleanup and summaries) runs
 locally through [Ollama](https://ollama.com).
 
+## Contributing
+
+Windows is the main development platform: see [DEV_SETUP_WINDOWS.md](DEV_SETUP_WINDOWS.md).
+
 ## Working method
 
 Ship a small version, use it daily, then fix what hurts. Each phase ends with a tagged release.
