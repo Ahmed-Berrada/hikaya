@@ -1,4 +1,22 @@
-# Handy
+# Hikaya
+
+**Local-first dictation and meeting notes. Speak, and it types. Record a meeting, and you get the raw transcript and a summary. Everything stays on your machine.**
+
+Hikaya (حكاية, Darija for "a story, a telling") is a fork of [Handy](https://github.com/cjpais/Handy) by CJ Pais. It adds:
+
+- **A learning loop**: a personal dictionary and replacement rules mined from your corrections.
+- **Meeting notes**: mic and system audio, a raw diarized transcript, and a local LLM summary.
+- **English, French and mixed EN/FR** as first-class languages.
+- **An optional self-hosted hub** that syncs your devices and adds phone capture.
+
+> **Status:** early development. The app currently behaves like upstream Handy; see the
+> [roadmap](docs/hikaya/ROADMAP.md) and [architecture decisions](docs/adr/).
+
+---
+
+_The rest of this README is inherited from Handy and still applies to the current build._
+
+## Handy
 
 [![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
 
