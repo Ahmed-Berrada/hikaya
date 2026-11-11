@@ -83,9 +83,9 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJBQjcyMDk1MjA2NjAxRjkKUldUNUFXWWdsU0MzdXRRZi8zYzhqV2FaNUVDbDd2Rk5VM1IvWWowVXdmRFNKQ1BrMXF5RFFsLy8K",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYzOEZDRDNCQkM3QThFOApSV1RvcU1lNzAvdzRENUdYSUN0dVRqWHB2bmRBTEwzY2phWE9OSXQ2aEhUMTRIV1hGV0cxVk9HYgo=",
       "endpoints": [
-        "https://github.com/cjpais/Handy/releases/latest/download/latest.json"
+        "https://github.com/Ahmed-Berrada/hikaya/releases/latest/download/latest.json"
       ]
     }
   }
