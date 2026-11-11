@@ -44,6 +44,17 @@ bun run tauri dev
 The first build compiles whisper.cpp and the Vulkan shaders, which takes several minutes. Later
 builds are incremental.
 
+### Local installer build
+
+Release builds are signed for the auto-updater in CI. Locally, skip the updater artifacts, since
+the private key only lives in GitHub Actions secrets:
+
+```powershell
+bun run tauri build --config src-tauri/tauri.local-build.conf.json
+```
+
+The installer lands in `src-tauri/target/release/bundle/nsis/`.
+
 ## 3. Before every commit
 
 ```powershell
