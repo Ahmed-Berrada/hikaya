@@ -10,7 +10,7 @@ Hikaya is a public fork of [Handy](https://github.com/cjpais/Handy). The roadmap
 - **Branches and PRs:** never commit to `main` directly. Use `feat/…`, `fix/…`, `docs/…` or `chore/…`
   branches, each merged through a PR.
 - **Commits:** small and focused, using [Conventional Commits](https://www.conventionalcommits.org/)
-  (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`). The body says *why*. Each commit
+  (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`). The body says _why_. Each commit
   should build and pass lint.
 - **Upstream sync:** `git fetch upstream && git merge upstream/main` on a `chore/sync-upstream-*`
   branch. Keep Hikaya-only code in its own modules (e.g. `src-tauri/src/hikaya/`) to keep
