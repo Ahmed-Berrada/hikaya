@@ -72,25 +72,8 @@ For detailed build instructions including platform-specific requirements, see [B
 
 ## Sponsors
 
-<div align="center">
-  We're grateful for the support of our sponsors who help make Handy possible:
-  <br><br>
-  <a href="https://wordcab.com">
-    <img src="sponsor-images/wordcab.png" alt="Wordcab" width="120" height="120">
-  </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://github.com/epicenter-so/epicenter">
-    <img src="sponsor-images/epicenter.png" alt="Epicenter" width="120" height="120">
-  </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://boltai.com?utm_source=handy">
-    <img src="sponsor-images/boltai.jpg" alt="Bolt AI" width="120" height="120">
-  </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://cantydigital.com.au/">
-    <img src="sponsor-images/cantydigital.png" alt="Canty Digital" width="120" height="120">
-  </a>
-</div>
+Hikaya has no sponsors. If Handy helps you too, consider
+[supporting its author](https://github.com/cjpais/Handy#sponsors).
 
 ## Integrations
 
