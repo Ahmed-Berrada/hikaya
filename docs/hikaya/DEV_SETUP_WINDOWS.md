@@ -69,10 +69,14 @@ Follow the branch, commit and PR rules in [`AGENTS.md`](../../AGENTS.md).
 
 ```powershell
 winget install --id Ollama.Ollama -e
-ollama pull qwen3:4b
+ollama pull qwen3:4b-instruct
 ```
 
 Ollama listens on `http://127.0.0.1:11434` and uses the GPU automatically.
+
+Use an **instruct** model. Since the Qwen3 2507 release, the plain `qwen3:4b` tag is a thinking-only
+model: it ignores `think: false` and reasons for hundreds of tokens before answering, which is far
+too slow for dictation cleanup.
 
 ## Troubleshooting
 
