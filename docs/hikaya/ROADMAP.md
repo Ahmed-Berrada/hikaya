@@ -15,19 +15,21 @@ locally through [Ollama](https://ollama.com).
 
 ## Contributing
 
-Windows is the main development platform: see [DEV_SETUP_WINDOWS.md](DEV_SETUP_WINDOWS.md).
+Development and automated tests run on Linux; Windows installers are built by CI for each release
+(see [ADR 0002](../adr/0002-linux-dev-and-hub-archive.md)). To build on Windows yourself, see
+[DEV_SETUP_WINDOWS.md](DEV_SETUP_WINDOWS.md).
 
 ## Working method
 
 Ship a small version, use it daily, then fix what hurts. Each phase ends with a tagged release.
 
-## Device roles (see [ADR 0001](../adr/0001-device-topology.md))
+## Device roles (see ADRs [0001](../adr/0001-device-topology.md) and [0002](../adr/0002-linux-dev-and-hub-archive.md))
 
-| Device                     | Role                                                                                                              |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Desktop/laptop with a GPU  | Main client. Dictation and live transcription run on the local GPU.                                               |
-| Self-hosted hub (optional) | Always-on home server: storage, sync between devices, background jobs (re-transcription, diarization, summaries). |
-| Phone                      | Capture only: a web app over a private network for in-person meetings and voice notes.                            |
+| Device                    | Role                                                                                                                 |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Desktop/laptop with a GPU | Main client. Dictation, live transcription and summaries run on the local GPU. Keeps a local copy and works offline. |
+| Self-hosted hub           | Always-on home server: the complete, encrypted archive, sync between devices, and background jobs as a fallback.     |
+| Phone                     | Capture only: a web app over a private network for in-person meetings and voice notes.                               |
 
 ## Phases
 
@@ -43,19 +45,23 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
   2 or more times is proposed as a replacement rule.
 - Recent corrections become few-shot examples for cleanup. Stats page (WPM, top corrections).
 
-### v0.3: Meetings
+### v0.3: Hub, vault and sync
+
+- Rust (axum) service in Docker, reachable only over a private network (e.g. Tailscale), with
+  per-device tokens.
+- Encrypted store (SQLCipher and `age`). The hub stays locked after a restart until the passphrase
+  is entered; clients queue their data meanwhile.
+- Sync for dictations, dictionary and rules from a client-side outbox. Web viewer with search.
+- Encrypted backups, with a tested restore.
+
+### v0.4: Meetings
 
 - Mic and system loopback recorded as separate tracks (you vs. others), written to disk continuously
   so a crash doesn't lose the recording.
 - Live chunked transcription, then a final higher-quality pass with diarization.
-- **Raw transcript** with timestamps and speakers, plus a **summary** (map-reduce via Ollama).
-- Export to Markdown, TXT and SRT. Audio retention settings.
-
-### v0.4: Hub and sync
-
-- Rust (axum) service in Docker, reachable only over a private network (e.g. Tailscale), with
-  per-device tokens.
-- Sync for dictations, meetings, dictionary and rules. Job queue for background work.
+- **Raw transcript** with timestamps and speakers, plus a **summary** (map-reduce via Ollama) made
+  on the GPU client, with the hub as fallback.
+- Export to Markdown, TXT and SRT. Audio retention settings. Recording indicator and consent reminder.
 
 ### v0.5: Phone capture
 
