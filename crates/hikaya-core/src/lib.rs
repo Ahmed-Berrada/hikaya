@@ -4,4 +4,5 @@
 //! tested on any machine. The desktop app and the hub both depend on it.
 
 pub mod fillers;
+pub mod rules;
 pub mod token;
