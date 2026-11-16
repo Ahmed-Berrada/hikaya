@@ -19,6 +19,16 @@ Development and automated tests run on Linux; Windows installers are built by CI
 (see [ADR 0002](../adr/0002-linux-dev-and-hub-archive.md)). To build on Windows yourself, see
 [DEV_SETUP_WINDOWS.md](DEV_SETUP_WINDOWS.md).
 
+## Platforms
+
+| Platform    | Status                                                              |
+| ----------- | ------------------------------------------------------------------- |
+| Windows x64 | Main target. Every release is checked by hand on it.                |
+| Linux x64   | Built and tested automatically; used for development.               |
+| iPhone      | Nice to have: a web app served by the hub (v0.5), not a native app. |
+| macOS       | Not supported. Builds were removed.                                 |
+| Windows ARM | Not supported for now (#15).                                        |
+
 ## Working method
 
 Ship a small version, use it daily, then fix what hurts. Each phase ends with a tagged release.
@@ -74,3 +84,7 @@ Accuracy is measured with word error rate (WER) on openly licensed corpora (Mozi
 FLEURS, VoxPopuli; EN and FR) plus the user's own recordings, which are never committed. We don't
 train on scraped video platforms; their terms forbid it. Personalization comes from the learning
 loop. Fine-tuning is only considered if the benchmarks show a gap.
+
+If fine-tuning is needed, it runs on the owner's Windows PC with an NVIDIA GPU (a few hours per
+run), using the user's corrected dictations plus openly licensed EN/FR corpora. The result is a
+model file loaded like any other; nothing about training ships in the app.
