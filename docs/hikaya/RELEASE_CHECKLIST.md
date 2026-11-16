@@ -40,6 +40,18 @@ Open Notepad and use the transcribe shortcut.
 - [ ] Accept it. Say the word again: it now comes out right.
 - [ ] Add a rule by hand, dictate the pattern, see the replacement. Switch the rule off, dictate again, see the original.
 
+## Meetings
+
+- [ ] Meetings → Start recording. Play a YouTube talk through the speakers and speak into the
+      microphone (headphones off). "Other people: …" shows the speakers, not "Only your microphone".
+- [ ] After about 30 s, lines appear under **Others** (the talk) and **You** (your voice), each in
+      its language.
+- [ ] Stop. The meeting turns "Done" within a minute; its audio is in the app data folder under
+      `meetings/<id>/`.
+- [ ] Summarize (needs Ollama): TL;DR, decisions and action items in the meeting's language.
+- [ ] Save as Markdown and as SRT; open both files.
+- [ ] Dictate while a meeting records: dictation still works, and the meeting goes on.
+
 ## Sync with the hub (only if Tailscale is running on this machine)
 
 - [ ] Sync → address `https://<hub>.<tailnet>.ts.net`, a device name, the hub passphrase → Connect.

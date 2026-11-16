@@ -76,7 +76,7 @@ viewer, encrypted snapshots in the nightly backup, Docker deployment on the home
 syncing the custom-words dictionary, and `age` encryption for audio (no audio is synced yet; it
 comes with meetings).
 
-### v0.4: Meetings
+### v0.4: Meetings (first version built)
 
 - Mic and system loopback recorded as separate tracks (you vs. others), written to disk continuously
   so a crash doesn't lose the recording.
@@ -84,6 +84,11 @@ comes with meetings).
 - **Raw transcript** with timestamps and speakers, plus a **summary** (map-reduce via Ollama) made
   on the GPU client, with the hub as fallback.
 - Export to Markdown, TXT and SRT. Audio retention settings. Recording indicator and consent reminder.
+
+Done: two tracks (WASAPI loopback on Windows, PipeWire monitor on Linux), crash-safe segments,
+transcription while recording, echo removal, summaries with the configured provider, Markdown and
+SRT export, consent reminder (ADR 0003). Left: speakers beyond You/Others, a tray indicator,
+audio retention, syncing meetings to the hub, and the Windows hand check.
 
 ### v0.5: Phone capture (viewing done)
 
