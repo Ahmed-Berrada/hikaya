@@ -23,6 +23,8 @@ export interface MockOptions {
   settings?: Record<string, unknown>;
   /** Rule suggestions the fake backend starts with. */
   proposals?: MockProposal[];
+  /** Version the fake app reports. */
+  appVersion?: string;
   /** Starting state of the fake hub connection. */
   hub?: Record<string, unknown>;
   /** Dictations the fake History starts with. */
@@ -41,7 +43,7 @@ export interface MockOptions {
 export const mockTauri = async (page: Page, options: MockOptions = {}) => {
   const settings = { ...defaultSettings, ...options.settings };
   await page.addInitScript(
-    ({ settings, locale, proposals, history, hub }) => {
+    ({ settings, locale, proposals, history, hub, appVersion }) => {
       type Rule = {
         id: number;
         pattern: string;
@@ -190,7 +192,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
         get_microphone_channels: () => [],
         "plugin:event|listen": () => nextCallback++,
         "plugin:event|unlisten": () => null,
-        "plugin:app|version": () => "0.1.0",
+        "plugin:app|version": () => appVersion,
       };
 
       Object.assign(state.hub, hub);
@@ -236,6 +238,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       proposals: options.proposals ?? [],
       history: options.history ?? [],
       hub: options.hub ?? {},
+      appVersion: options.appVersion ?? "0.2.0",
     },
   );
 };

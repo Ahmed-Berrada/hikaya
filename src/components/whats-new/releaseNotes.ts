@@ -15,8 +15,9 @@ interface FindReleaseNoteOptions {
   lastSeenVersion: string;
 }
 
+// Hikaya shows its own release notes, not Handy's (src/content/release-notes).
 const releaseNoteModules = import.meta.glob<string>(
-  "../../content/release-notes/*.md",
+  "../../hikaya/release-notes/*.md",
   {
     eager: true,
     import: "default",
