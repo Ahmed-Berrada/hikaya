@@ -87,8 +87,8 @@ comes with meetings).
 
 Done: two tracks (WASAPI loopback on Windows, PipeWire monitor on Linux), crash-safe segments,
 transcription while recording, echo removal, summaries with the configured provider, Markdown and
-SRT export, consent reminder (ADR 0003). Left: speakers beyond You/Others, a tray indicator,
-audio retention, syncing meetings to the hub, and the Windows hand check.
+SRT export, consent reminder (ADR 0003), and sync to the hub as text. Left: speakers beyond
+You/Others, a tray indicator, audio retention, and the Windows hand check.
 
 ### v0.5: Phone capture (viewing done)
 

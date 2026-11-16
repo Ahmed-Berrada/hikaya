@@ -40,6 +40,37 @@ const seed = async (request: APIRequestContext) => {
     },
   });
   expect(response.ok()).toBeTruthy();
+  const meetings = await request.post("/api/sync/push", {
+    headers: { authorization: `Bearer ${token}` },
+    data: {
+      meetings: [
+        {
+          id: "meeting-1",
+          title: "Point produit",
+          started_at: now - 3_600_000,
+          duration_ms: 1_865_000,
+          updated_at: now,
+          summary:
+            "## TL;DR\nLa démo est décalée à jeudi.\n\n## Action items\n- [ ] You: prévenir Sarah\n- <b>not bold</b>",
+          lines: [
+            {
+              start_ms: 0,
+              end_ms: 30000,
+              speaker: "others",
+              text: "On décale la démo à jeudi ?",
+            },
+            {
+              start_ms: 30000,
+              end_ms: 60000,
+              speaker: "you",
+              text: "Oui, jeudi 14h.",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(meetings.ok()).toBeTruthy();
 };
 
 test.beforeEach(async ({ request }) => seed(request));
@@ -86,6 +117,52 @@ test("dictation text is shown as text, never run as HTML", async ({ page }) => {
   ).toBeVisible();
   expect(await page.evaluate(() => (window as any).__pwned)).toBeUndefined();
   expect(await page.locator("#results img, #results script").count()).toBe(0);
+});
+
+test("lists, searches and opens meetings", async ({ page }) => {
+  await pair(page, "meetings check");
+  await page.getByRole("tab", { name: "Meetings" }).click();
+  await expect(page.getByRole("tab", { name: "Meetings" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(
+    page.getByRole("button", { name: /Point produit/ }),
+  ).toBeVisible();
+  await expect(page.getByText(/31:05 · laptop · 2 lines/)).toBeVisible();
+
+  await page.getByRole("searchbox").fill("sarah");
+  await expect(
+    page.getByRole("button", { name: /Point produit/ }),
+  ).toBeVisible();
+  await page.getByRole("searchbox").fill("budget");
+  await expect(page.getByText("Nothing matches.")).toBeVisible();
+  await page.getByRole("searchbox").fill("");
+
+  await page.getByRole("button", { name: /Point produit/ }).click();
+  await expect(
+    page.getByRole("heading", { name: "Point produit" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "TL;DR" })).toBeVisible();
+  await expect(page.getByText("You: prévenir Sarah")).toBeVisible();
+  // HTML in a summary is shown as text.
+  await expect(page.getByText("<b>not bold</b>")).toBeVisible();
+  expect(await page.locator("#meeting-summary b").count()).toBe(0);
+  await expect(page.locator("#meeting-lines li").first()).toContainText(
+    "00:00Others:On décale la démo à jeudi ?",
+  );
+  await expect(page.locator("#meeting-lines li").nth(1)).toContainText(
+    "00:30You:Oui, jeudi 14h.",
+  );
+
+  await page.getByRole("button", { name: "← All meetings" }).click();
+  await expect(
+    page.getByRole("button", { name: /Point produit/ }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Dictations" }).click();
+  await expect(
+    page.getByRole("listitem").filter({ hasText: "laptop" }).first(),
+  ).toBeVisible();
 });
 
 test("pairing survives a reload, and a locked hub is unlocked from the page", async ({
