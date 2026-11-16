@@ -1,0 +1,170 @@
+:root {
+  --bg: #fafafa;
+  --card: #ffffff;
+  --text: #1f1f1f;
+  --muted: #6b6b6b;
+  --line: #e4e4e4;
+  --accent: #d6447f;
+  --warn: #c77700;
+  --ok: #2f8f46;
+  --danger: #c0392b;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161616;
+    --card: #222222;
+    --text: #ececec;
+    --muted: #a0a0a0;
+    --line: #333333;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+/* Components set display (flex, block); without this they would ignore `hidden`. */
+[hidden] {
+  display: none !important;
+}
+body {
+  margin: 0 auto;
+  max-width: 720px;
+  padding: env(safe-area-inset-top) 16px
+    calc(24px + env(safe-area-inset-bottom));
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0 8px;
+}
+h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--accent);
+}
+h2 {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+}
+.state {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.state.ok {
+  color: var(--ok);
+}
+.state.warn {
+  color: var(--warn);
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0;
+}
+.hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+input {
+  font: inherit;
+  font-size: 16px; /* iOS zooms into smaller inputs */
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+button {
+  font: inherit;
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 0;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+button.link {
+  background: none;
+  color: var(--muted);
+  padding: 4px;
+  font-weight: 400;
+  text-decoration: underline;
+}
+#search {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  padding: 8px 0;
+}
+#results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+#results li {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 10px 0;
+}
+#results .meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+#results .text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+#results mark {
+  background: color-mix(in srgb, var(--accent) 25%, transparent);
+  color: inherit;
+  border-radius: 3px;
+}
+#more {
+  width: 100%;
+  margin: 8px 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 16px;
+}
+.error {
+  color: var(--danger);
+}

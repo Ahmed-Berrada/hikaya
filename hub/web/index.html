@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Hikaya</title>
+    <link rel="stylesheet" href="/app.css" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Hikaya" />
+  </head>
+  <body>
+    <header>
+      <h1>Hikaya</h1>
+      <span id="state" class="state" role="status"></span>
+    </header>
+
+    <main>
+      <!-- Shown when this browser is not paired with the hub yet. -->
+      <form id="pair" class="card" hidden>
+        <h2 data-t="pairTitle"></h2>
+        <p class="hint" data-t="pairHint"></p>
+        <label
+          ><span data-t="deviceName"></span>
+          <input
+            id="pair-name"
+            type="text"
+            maxlength="64"
+            required
+            autocomplete="off"
+          />
+        </label>
+        <label
+          ><span data-t="passphrase"></span>
+          <input
+            id="pair-pass"
+            type="password"
+            required
+            autocomplete="current-password"
+          />
+        </label>
+        <button type="submit" data-t="pair"></button>
+      </form>
+
+      <!-- Shown when the hub restarted and waits for its passphrase. -->
+      <form id="unlock" class="card" hidden>
+        <h2 data-t="lockedTitle"></h2>
+        <p class="hint" data-t="lockedHint"></p>
+        <label
+          ><span data-t="passphrase"></span>
+          <input
+            id="unlock-pass"
+            type="password"
+            required
+            autocomplete="current-password"
+          />
+        </label>
+        <button type="submit" data-t="unlock"></button>
+      </form>
+
+      <p id="uninitialized" class="card hint" hidden data-t="uninitialized"></p>
+
+      <section id="archive" hidden>
+        <form id="search" role="search">
+          <input
+            id="q"
+            type="search"
+            autocomplete="off"
+            enterkeyhint="search"
+          />
+        </form>
+        <ol id="results"></ol>
+        <p id="empty" class="hint" hidden></p>
+        <button id="more" type="button" hidden data-t="more"></button>
+        <footer>
+          <span id="device"></span>
+          <button
+            id="forget"
+            type="button"
+            class="link"
+            data-t="forget"
+          ></button>
+        </footer>
+      </section>
+
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
