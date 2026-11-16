@@ -13,6 +13,7 @@ import {
   FileAudio,
   FilePlus,
   FolderOpen,
+  Pencil,
   RotateCcw,
   Star,
   Trash2,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { notify } from "@/stores/noticeStore";
+import { CorrectionEditor } from "@/components/hikaya/CorrectionEditor";
 import {
   commands,
   events,
@@ -403,6 +405,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const [cancelling, setCancelling] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const textRef = useRef<HTMLParagraphElement>(null);
 
   // Queued or being transcribed in the background.
@@ -492,6 +495,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
             )}
           </IconButton>
           <IconButton
+            onClick={() => setCorrecting(!correcting)}
+            active={correcting}
+            disabled={!hasTranscription || retrying}
+            title={t("hikaya.correction.edit")}
+          >
+            <Pencil width={16} height={16} />
+          </IconButton>
+          <IconButton
             onClick={onToggleSaved}
             active={entry.saved}
             title={
@@ -579,6 +590,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           </button>
         )}
       </div>
+
+      {correcting && hasTranscription && !retrying && (
+        <CorrectionEditor
+          entryId={entry.id}
+          text={entry.transcription_text}
+          onClose={() => setCorrecting(false)}
+        />
+      )}
 
       <AudioPlayer onLoadRequest={handleLoadAudio} className="w-full" />
     </div>
