@@ -16,7 +16,7 @@ fn main() {
     // (Windows resolves DLLs from the exe directory, so it needs no rpath;
     // macOS links transcribe-cpp statically via the `metal` feature.)
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
-        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Handy:$ORIGIN/../lib");
+        println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../lib/Hikaya:$ORIGIN/../lib");
     }
 
     // CPAL (handy-recorder's and rodio's) links two CoreAudio functions that
@@ -292,7 +292,11 @@ fn generate_tray_translations() {
 
         println!("cargo:rerun-if-changed={}", json_path.display());
 
-        let content = fs::read_to_string(&json_path).unwrap();
+        // Hikaya keeps Handy's translation files unchanged and swaps the
+        // product name when they are loaded (see src/hikaya/brand.ts).
+        let content = fs::read_to_string(&json_path)
+            .unwrap()
+            .replace("Handy", "Hikaya");
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
 
         if let Some(mut tray) = parsed.get("tray").cloned() {
