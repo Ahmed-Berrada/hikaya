@@ -11,6 +11,7 @@ here runs and is tested on any machine.
 | `faithful`    | Rejects an AI cleanup that translated, answered or rewrote the text.               |
 | `sync`        | The records devices and the hub exchange, shared so both sides agree.              |
 | `meeting`     | Meeting transcript lines, echo removal, splitting for summaries, Markdown/SRT.    |
+| `audio`       | Mixing to mono and converting sample rates for system-audio capture.               |
 | `corrections` | Turns a user's edit into word substitutions and proposes rules from repeated ones. |
 
 ```bash
