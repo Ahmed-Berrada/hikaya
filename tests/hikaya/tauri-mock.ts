@@ -23,6 +23,8 @@ export interface MockOptions {
   settings?: Record<string, unknown>;
   /** Rule suggestions the fake backend starts with. */
   proposals?: MockProposal[];
+  /** Starting state of the fake hub connection. */
+  hub?: Record<string, unknown>;
   /** Dictations the fake History starts with. */
   history?: { id: number; text: string }[];
   /** UI language, as the OS would report it. */
@@ -39,7 +41,7 @@ export interface MockOptions {
 export const mockTauri = async (page: Page, options: MockOptions = {}) => {
   const settings = { ...defaultSettings, ...options.settings };
   await page.addInitScript(
-    ({ settings, locale, proposals, history }) => {
+    ({ settings, locale, proposals, history, hub }) => {
       type Rule = {
         id: number;
         pattern: string;
@@ -54,6 +56,15 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
         nextId: 1,
         calls: [] as { cmd: string; args: unknown }[],
         unknown: [] as string[],
+        hub: {
+          state: "not_connected",
+          url: null as string | null,
+          device_name: null as string | null,
+          message: null as string | null,
+          pending: 0,
+          last_sync_at: null as number | null,
+        },
+        hubPassphrase: "correct horse battery staple",
         history: history.map(({ id, text }) => ({
           id,
           file_name: `hikaya-${id}.wav`,
@@ -117,6 +128,42 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           );
           return null;
         },
+        hikaya_hub_status: () => ({ ...state.hub }),
+        hikaya_hub_connect: ({ url, deviceName, passphrase }) => {
+          if (!/^https?:\/\//.test(url)) {
+            throw "the address must start with http:// or https://";
+          }
+          if (passphrase !== state.hubPassphrase)
+            throw "the passphrase is wrong";
+          Object.assign(state.hub, {
+            state: "up_to_date",
+            url: url.replace(/\/+$/, ""),
+            device_name: deviceName.trim(),
+            pending: 0,
+            last_sync_at: 1763300000000,
+          });
+          return { ...state.hub };
+        },
+        hikaya_hub_unlock: ({ passphrase }) => {
+          if (passphrase !== state.hubPassphrase)
+            throw "the passphrase is wrong";
+          Object.assign(state.hub, { state: "up_to_date", pending: 0 });
+          return { ...state.hub };
+        },
+        hikaya_hub_sync_now: () => {
+          Object.assign(state.hub, { state: "up_to_date", pending: 0 });
+          return { ...state.hub };
+        },
+        hikaya_hub_disconnect: () => {
+          Object.assign(state.hub, {
+            state: "not_connected",
+            url: null,
+            device_name: null,
+            pending: 0,
+            last_sync_at: null,
+          });
+          return { ...state.hub };
+        },
         hikaya_correct_history_entry: ({ id, correctedText }) => {
           const entry = state.history.find((e) => e.id === id);
           if (entry) entry.transcription_text = correctedText;
@@ -146,6 +193,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
         "plugin:app|version": () => "0.1.0",
       };
 
+      Object.assign(state.hub, hub);
       (window as any).__HIKAYA_MOCK__ = { state, handlers: {} };
       (window as any).__TAURI_OS_PLUGIN_INTERNALS__ = {
         os_type: "linux",
@@ -187,6 +235,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       locale: options.locale ?? "en-US",
       proposals: options.proposals ?? [],
       history: options.history ?? [],
+      hub: options.hub ?? {},
     },
   );
 };

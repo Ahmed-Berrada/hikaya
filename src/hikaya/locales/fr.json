@@ -40,5 +40,45 @@
     "learned_one": "{{count}} correction notée : {{list}}",
     "learned_other": "{{count}} corrections notées : {{list}}",
     "savedNothingLearned": "Texte enregistré. Aucun remplacement de mot à retenir."
+  },
+  "hub": {
+    "sidebar": "Synchronisation",
+    "title": "Votre hub",
+    "description": "Le hub est un petit serveur sur une machine qui vous appartient. Il conserve toutes vos dictées, chiffrées, et partage vos règles entre vos appareils.",
+    "states": {
+      "not_connected": "Non connecté",
+      "waiting": "Connecté",
+      "syncing": "Synchronisation…",
+      "up_to_date": "À jour",
+      "offline": "Hub injoignable",
+      "locked": "Hub verrouillé",
+      "unauthorized": "Appareil non autorisé",
+      "error": "Échec de la synchronisation"
+    },
+    "explain": {
+      "offline": "Vos dictées attendent sur cet ordinateur et seront envoyées quand le hub sera de retour.",
+      "locked": "Le hub a redémarré. Saisissez sa phrase secrète pour le déverrouiller ; rien n'est perdu entre-temps.",
+      "unauthorized": "Le hub n'accepte plus cet appareil. Déconnectez-vous puis reconnectez-vous.",
+      "error": "Vos dictées attendent sur cet ordinateur. Réessayez ou vérifiez le hub."
+    },
+    "pending_one": "{{count}} modification en attente d'envoi",
+    "pending_other": "{{count}} modifications en attente d'envoi",
+    "nothingPending": "Rien en attente d'envoi",
+    "lastSync": "Dernière synchronisation {{when}}",
+    "never": "Jamais synchronisé",
+    "address": "Adresse du hub",
+    "deviceName": "Nom de cet appareil",
+    "deviceNamePlaceholder": "Portable",
+    "passphrase": "Phrase secrète du hub",
+    "passphraseHint": "Si le hub est neuf, cette phrase le crée : au moins 12 caractères, et elle est irrécupérable en cas de perte.",
+    "connect": "Se connecter",
+    "connecting": "Connexion…",
+    "unlock": "Déverrouiller",
+    "syncNow": "Synchroniser",
+    "disconnect": "Se déconnecter",
+    "disconnectConfirm": "Se déconnecter du hub ? Les dictées encore en attente ici ne seront pas envoyées. Les données déjà sur le hub y restent.",
+    "connectedTo": "Connecté à {{url}} en tant que « {{name}} »",
+    "failed": "Impossible de joindre le hub",
+    "statusLabel": "État de la synchronisation"
   }
 }

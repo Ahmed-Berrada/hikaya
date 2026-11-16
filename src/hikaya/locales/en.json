@@ -40,5 +40,45 @@
     "learned_one": "Noted {{count}} correction: {{list}}",
     "learned_other": "Noted {{count}} corrections: {{list}}",
     "savedNothingLearned": "Text saved. No word replacement to learn from."
+  },
+  "hub": {
+    "sidebar": "Sync",
+    "title": "Your hub",
+    "description": "A hub is a small server on a machine you own. It keeps every dictation, encrypted, and shares your rules between devices.",
+    "states": {
+      "not_connected": "Not connected",
+      "waiting": "Connected",
+      "syncing": "Syncing…",
+      "up_to_date": "Up to date",
+      "offline": "Hub unreachable",
+      "locked": "Hub locked",
+      "unauthorized": "Device not allowed",
+      "error": "Sync failed"
+    },
+    "explain": {
+      "offline": "Your dictations wait on this computer and are sent when the hub is back.",
+      "locked": "The hub restarted. Enter its passphrase to unlock it; nothing is lost meanwhile.",
+      "unauthorized": "The hub no longer accepts this device. Disconnect, then connect again.",
+      "error": "Your dictations wait on this computer. Try again, or check the hub."
+    },
+    "pending_one": "{{count}} change waiting to be sent",
+    "pending_other": "{{count}} changes waiting to be sent",
+    "nothingPending": "Nothing waiting to be sent",
+    "lastSync": "Last synced {{when}}",
+    "never": "Never synced",
+    "address": "Hub address",
+    "deviceName": "This device's name",
+    "deviceNamePlaceholder": "Laptop",
+    "passphrase": "Hub passphrase",
+    "passphraseHint": "If the hub is new, this passphrase creates it: at least 12 characters, and it cannot be recovered if lost.",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "unlock": "Unlock",
+    "syncNow": "Sync now",
+    "disconnect": "Disconnect",
+    "disconnectConfirm": "Disconnect from the hub? Dictations still waiting here will not be sent. Data already on the hub stays there.",
+    "connectedTo": "Connected to {{url}} as “{{name}}”",
+    "failed": "Couldn't reach the hub",
+    "statusLabel": "Sync status"
   }
 }

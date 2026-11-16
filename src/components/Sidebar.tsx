@@ -8,9 +8,11 @@ import {
   Info,
   Sparkles,
   Cpu,
+  RefreshCw,
 } from "lucide-react";
 import HikayaTextLogo from "./hikaya/HikayaTextLogo";
 import { LearningSettings } from "./hikaya/LearningSettings";
+import { HubSettings } from "./hikaya/HubSettings";
 import HandyHand from "./icons/HandyHand";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -57,6 +59,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "hikaya.sidebar",
     icon: GraduationCap,
     component: LearningSettings,
+    enabled: () => true,
+  },
+  sync: {
+    labelKey: "hikaya.hub.sidebar",
+    icon: RefreshCw,
+    component: HubSettings,
     enabled: () => true,
   },
   models: {

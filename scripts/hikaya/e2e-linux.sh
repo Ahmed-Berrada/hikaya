@@ -9,6 +9,9 @@
 #   bun run tauri dev      # once, to build src-tauri/target/debug/handy
 #   scripts/hikaya/e2e-linux.sh
 #
+# With HIKAYA_E2E_HUB=1 it also starts a real hub (built from hub/), connects
+# the app to it, and checks that the dictation arrives on the hub.
+#
 # Safety: the app runs with a throwaway data directory (XDG_DATA_HOME) and
 # with pasting switched off, so nothing is typed into the desktop and no real
 # history or settings are touched. The default microphone is switched to the
@@ -57,6 +60,7 @@ APP_PID=""; MIC_PID=""
 cleanup() {
   [[ -n "$APP_PID" ]] && kill "$APP_PID" 2>/dev/null || true
   [[ -n "$MIC_PID" ]] && kill "$MIC_PID" 2>/dev/null || true
+  [[ -n "${HUB_PID:-}" ]] && kill "$HUB_PID" 2>/dev/null || true
   if [[ -n "$previous_source" ]]; then
     id="$(node_id "$previous_source" || true)"
     [[ -n "${id:-}" ]] && wpctl set-default "$id" 2>/dev/null || true
@@ -82,9 +86,9 @@ app --list-models >"$WORK/models.txt" 2>&1 || { tail -5 "$WORK/models.txt"; die 
 MODEL_ID="$(sed -n "s/^ *✓ *\([^ ]*$MODEL_FILE\) .*/\1/p" "$WORK/models.txt" | head -1)"
 [[ -n "$MODEL_ID" ]] || die "the app did not find $MODEL_FILE in its models folder"
 
-say "writing test settings and one replacement rule"
+say "writing test settings"
 python3 - "$DATA" "$MODEL_ID" <<'PY'
-import json, sqlite3, sys, time, pathlib
+import json, sys, pathlib
 data, model = pathlib.Path(sys.argv[1]), sys.argv[2]
 path = data / "settings_store.json"
 store = json.loads(path.read_text())
@@ -98,31 +102,66 @@ store["settings"].update({
     "update_checks_enabled": False,
 })
 path.write_text(json.dumps(store))
-# Same schema as src-tauri/src/hikaya/store.rs, migration 1.
-db = sqlite3.connect(data / "hikaya.db")
-db.executescript("""
-CREATE TABLE rules (id INTEGER PRIMARY KEY AUTOINCREMENT, pattern TEXT NOT NULL, replacement TEXT NOT NULL,
-  app TEXT, enabled INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL);
-CREATE TABLE substitutions (id INTEGER PRIMARY KEY AUTOINCREMENT, history_id INTEGER, from_text TEXT NOT NULL,
-  to_text TEXT NOT NULL, created_at INTEGER NOT NULL);
-CREATE TABLE dismissed_proposals (pattern TEXT NOT NULL, replacement TEXT NOT NULL, PRIMARY KEY (pattern, replacement));
-PRAGMA user_version = 1;
-""")
-db.execute("INSERT INTO rules (pattern, replacement, created_at) VALUES (?, ?, ?)",
-           ("fellow americans", "fellow Canadians", int(time.time())))
+PY
+
+start_app() {
+  # Started directly, not through app(), so $! is the app and cleanup can stop it.
+  XDG_DATA_HOME="$WORK/xdg" LD_LIBRARY_PATH="$LIB_DIR" "$BIN" --start-hidden --no-tray >>"$WORK/app.log" 2>&1 &
+  APP_PID=$!
+  for _ in $(seq 1 120); do
+    grep -q "transcribe-cpp initialized" "$WORK/app.log" && return 0
+    kill -0 "$APP_PID" 2>/dev/null || { tail -20 "$WORK/app.log"; die "the app exited during startup"; }
+    sleep 0.5
+  done
+  die "the app did not finish starting"
+}
+stop_app() { kill "$APP_PID" 2>/dev/null || true; wait "$APP_PID" 2>/dev/null || true; APP_PID=""; : >"$WORK/app.log"; }
+
+say "starting the app once so it creates its own databases"
+start_app
+stop_app
+
+HUB_PID=""
+if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
+  say "building and starting a hub"
+  (cd "$REPO/hub" && cargo build --quiet) || die "the hub did not build"
+  HUB_URL="http://127.0.0.1:${HIKAYA_E2E_HUB_PORT:-18787}"
+  HIKAYA_HUB_DATA="$WORK/hub" HIKAYA_HUB_LISTEN="${HUB_URL#http://}" "$REPO/hub/target/debug/hikaya-hub" >"$WORK/hub.log" 2>&1 &
+  HUB_PID=$!
+  for _ in $(seq 1 40); do curl -fs "$HUB_URL/api/status" >/dev/null && break; sleep 0.25; done
+  PASS="e2e passphrase $(date +%s)"
+  curl -fs -X POST "$HUB_URL/api/init" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" >/dev/null || die "hub init failed"
+  HUB_TOKEN="$(curl -fs -X POST "$HUB_URL/api/devices" -H 'content-type: application/json' \
+    -d "{\"passphrase\":\"$PASS\",\"name\":\"e2e-laptop\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')"
+  [[ -n "$HUB_TOKEN" ]] || die "could not register a device on the hub"
+  # A rule made on "another device", which the app must pull and apply.
+  READER="$(curl -fs -X POST "$HUB_URL/api/devices" -H 'content-type: application/json' \
+    -d "{\"passphrase\":\"$PASS\",\"name\":\"e2e-phone\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')"
+  curl -fs -X POST "$HUB_URL/api/sync/push" -H "authorization: Bearer $READER" -H 'content-type: application/json' \
+    -d "{\"rules\":[{\"id\":\"phone-rule-1\",\"pattern\":\"your country\",\"replacement\":\"your community\",\"enabled\":true,\"source\":\"manual\",\"updated_at\":$(date +%s%3N)}]}" >/dev/null \
+    || die "could not add the remote rule"
+fi
+
+say "adding one local replacement rule"
+python3 - "$DATA/hikaya.db" "${HUB_URL:-}" "${HUB_TOKEN:-}" <<'PY'
+import sqlite3, sys, time
+db = sqlite3.connect(sys.argv[1])
+now = int(time.time() * 1000)
+db.execute(
+    "INSERT INTO rules (pattern, replacement, created_at, uid, updated_at) VALUES (?, ?, ?, lower(hex(randomblob(16))), ?)",
+    ("fellow americans", "fellow Canadians", now // 1000, now),
+)
+url, token = sys.argv[2], sys.argv[3]
+if url:
+    for key, value in (("hub_url", url), ("hub_token", token), ("device_name", "e2e-laptop")):
+        db.execute("INSERT INTO sync_settings (key, value) VALUES (?, ?)", (key, value))
 db.commit()
 PY
 
 say "starting the app"
-# Started directly, not through app(), so $! is the app and cleanup can stop it.
-XDG_DATA_HOME="$WORK/xdg" LD_LIBRARY_PATH="$LIB_DIR" "$BIN" --start-hidden --no-tray >"$WORK/app.log" 2>&1 &
-APP_PID=$!
-for _ in $(seq 1 120); do
-  grep -q "transcribe-cpp initialized" "$WORK/app.log" && break
-  kill -0 "$APP_PID" 2>/dev/null || { tail -20 "$WORK/app.log"; die "the app exited during startup"; }
-  sleep 0.5
-done
-sleep 3
+start_app
+# Long enough for the first background sync to pull the hub's rules.
+sleep "${HIKAYA_E2E_HUB:+8}${HIKAYA_E2E_HUB:-3}"
 
 say "dictating the sample"
 app --toggle-transcription >/dev/null 2>&1
@@ -147,7 +186,23 @@ done
 echo "   heard: $text"
 
 lower="$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')"
-[[ "$lower" == *"ask not what your country can do for you"* ]] || die "the sentence was not transcribed"
+# "country" may have been replaced by the hub rule, so check the words around it.
+[[ "$lower" == *"ask not what your"*"can do for you"* ]] || die "the sentence was not transcribed"
 [[ "$text" == *"fellow Canadians"* ]] || die "the replacement rule was not applied"
 [[ "$lower" != *"fellow americans"* ]] || die "the original words are still there"
 say "PASS: capture, VAD, speech-to-text, rules and history all work"
+
+if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
+  [[ "$lower" == *"your community"* ]] || die "the rule made on another device was not pulled and applied"
+  say "waiting for the dictation to reach the hub"
+  found=""
+  for _ in $(seq 1 30); do
+    found="$(curl -fs "$HUB_URL/api/dictations?q=canadians" -H "authorization: Bearer $READER" \
+      | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d[0]["text"] if d else "")')"
+    [[ -n "$found" ]] && break
+    sleep 1
+  done
+  [[ -n "$found" ]] || { grep -i "hub" "$WORK/app.log" | tail -5; die "the dictation never reached the hub"; }
+  echo "   hub has: $found"
+  say "PASS: the dictation was synced to the hub and a rule from another device was applied"
+fi

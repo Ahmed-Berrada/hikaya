@@ -869,7 +869,7 @@ impl ShortcutAction for TranscribeAction {
 
                             // Save to history if WAV was saved
                             if wav_saved {
-                                if let Err(err) = hm.save_entry(
+                                match hm.save_entry(
                                     file_name,
                                     transcription,
                                     post_process,
@@ -877,7 +877,11 @@ impl ShortcutAction for TranscribeAction {
                                     processed.post_process_prompt.clone(),
                                     language,
                                 ) {
-                                    error!("Failed to save history entry: {}", err);
+                                    // Hikaya: queue it for the hub before history can prune it.
+                                    Ok(entry) => {
+                                        crate::hikaya::sync_worker::on_dictation_saved(&ah, &entry)
+                                    }
+                                    Err(err) => error!("Failed to save history entry: {}", err),
                                 }
                             }
 
