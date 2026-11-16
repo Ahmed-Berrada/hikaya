@@ -994,6 +994,74 @@ async deleteHistoryEntry(id: number) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async hikayaListRules() : Promise<Result<StoredRule[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_list_rules") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaAddRule(pattern: string, replacement: string) : Promise<Result<StoredRule, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_add_rule", { pattern, replacement }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaSetRuleEnabled(id: number, enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_set_rule_enabled", { id, enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaDeleteRule(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_delete_rule", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaListProposals() : Promise<Result<RuleProposal[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_list_proposals") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaAcceptProposal(pattern: string, replacement: string) : Promise<Result<StoredRule, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_accept_proposal", { pattern, replacement }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaDismissProposal(pattern: string, replacement: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_dismiss_proposal", { pattern, replacement }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves the user's corrected text for a history entry and learns from the
+ * difference. Returns the word replacements that were recorded.
+ */
+async hikayaCorrectHistoryEntry(id: number, correctedText: string) : Promise<Result<LearnedSubstitution[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_correct_history_entry", { id, correctedText }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Queues the entry to be transcribed again with the current model. Its
  * progress and outcome arrive as `TranscriptionJob` events.
@@ -1038,10 +1106,8 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -1316,6 +1382,10 @@ export type LanguageStatus =
  * Auto can't work here; `language` is used instead.
  */
 { kind: "auto_unavailable"; language: string; reason: AutoUnavailableReason }
+/**
+ * One word replacement found in a correction.
+ */
+export type LearnedSubstitution = { from: string; to: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**
  * A macOS privacy permission Handy asks for during onboarding.
@@ -1433,6 +1503,14 @@ export type RecordingStateEvent = { phase: RecordingPhase }
  * A retired ONNX model found on disk.
  */
 export type RetiredModel = { id: string; name: string; size_mb: number; replacement_repo: string }
+/**
+ * A rule suggested from the user's repeated corrections.
+ */
+export type RuleProposal = { pattern: string; replacement: string; 
+/**
+ * How many times the user made this correction.
+ */
+count: number }
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 
 /**
@@ -1486,6 +1564,26 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * A replacement rule as stored and as shown in the UI.
+ */
+export type StoredRule = { id: number; 
+/**
+ * Words to look for (whole words, case-insensitive).
+ */
+pattern: string; 
+/**
+ * Text that replaces a match.
+ */
+replacement: string; enabled: boolean; 
+/**
+ * `manual` when the user typed it, `learned` when accepted from a proposal.
+ */
+source: string; 
+/**
+ * Unix time in seconds.
+ */
+created_at: number }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

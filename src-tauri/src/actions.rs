@@ -831,6 +831,10 @@ impl ShortcutAction for TranscribeAction {
                                 utils::redact_text(&transcription)
                             );
 
+                            // Hikaya: fillers for every spoken language, then the
+                            // user's replacement rules, before any model sees it.
+                            let transcription = crate::hikaya::stage::apply(&ah, transcription);
+
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);

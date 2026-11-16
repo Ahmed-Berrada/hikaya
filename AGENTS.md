@@ -17,6 +17,8 @@ Hikaya is a public fork of [Handy](https://github.com/cjpais/Handy). The roadmap
   conflicts small.
 - **Decisions:** any significant choice (model, protocol, storage) gets an ADR in `docs/adr/`
   (copy `0000-template.md`).
+- **Where Hikaya code goes:** logic in `crates/hikaya-core` (pure Rust, tested without Tauri); app glue in `src-tauri/src/hikaya/`; UI in `src/components/hikaya/` and `src/hikaya/`; browser tests in `tests/hikaya/` (they run the real frontend against `tauri-mock.ts`). Touch Handy's own files as little as possible.
+- **The name:** Handy's translation files keep saying "Handy"; `src/hikaya/brand.ts` swaps the name at load time. Do not rename it inside the locale files.
 - **Privacy:** never commit recordings, transcripts, personal test sets, tokens, hostnames or IPs.
   The evaluation audio lives outside the repo.
 - **Data:** do not add training or eval data scraped from video platforms. Use openly
@@ -261,7 +263,7 @@ feature freeze): follow those, not these, for anything sent to `cjpais/Handy`.
 - **Opening a PR:** Read [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md) and fill in every section. Always tick the AI Assistance box honestly. Always pass `--repo Ahmed-Berrada/hikaya` to `gh` so a PR never goes to upstream by accident.
 - **Opening an issue:** Bugs use [`bug_report.md`](.github/ISSUE_TEMPLATE/bug_report.md). Planned work and feature ideas may be plain issues that reference the roadmap phase.
 - **A bug that also exists in Handy:** report or fix it upstream, by a human, under Handy's rules.
-- **Translations:** Follow [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md). Hikaya-only strings need real English and French text. `bun run check:translations` requires the key in every locale, so the other locales get the English text as a placeholder.
+- **Translations:** Follow [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md). Hikaya-only strings do not go in Handy's locale files. Put them in `src/hikaya/locales/en.json` and `fr.json` (real text in both) and use them as `t("hikaya.…")`. Other languages fall back to English.
 - **Full contributor workflow:** [CONTRIBUTING.md](CONTRIBUTING.md) is inherited from Handy; where it conflicts with the "Hikaya fork conventions" at the top of this file, the conventions win.
 
 **Commits:** Use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Focus the message on _why_, not _what_.

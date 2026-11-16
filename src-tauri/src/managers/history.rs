@@ -644,6 +644,28 @@ impl HistoryManager {
         Ok(entry)
     }
 
+    /// Hikaya: replaces an entry's transcription (the text the history list
+    /// shows and copies) with the user's corrected version, and returns the
+    /// text it replaced.
+    pub async fn hikaya_replace_entry_text(&self, id: i64, text: &str) -> Result<String> {
+        let conn = self.get_connection()?;
+        let before: String = conn.query_row(
+            "SELECT transcription_text FROM transcription_history WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+        conn.execute(
+            "UPDATE transcription_history SET transcription_text = ?1 WHERE id = ?2",
+            params![text, id],
+        )?;
+        if let Some(entry) = self.get_entry_by_id(id).await? {
+            if let Err(e) = (HistoryUpdatePayload::Updated { entry }).emit(&self.app_handle) {
+                error!("Failed to emit history-updated event: {}", e);
+            }
+        }
+        Ok(before)
+    }
+
     pub async fn toggle_saved_status(&self, id: i64) -> Result<()> {
         let conn = self.get_connection()?;
 

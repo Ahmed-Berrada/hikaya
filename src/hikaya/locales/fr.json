@@ -1,0 +1,44 @@
+{
+  "sidebar": "Apprentissage",
+  "learning": {
+    "proposals": {
+      "title": "Règles suggérées",
+      "description": "Vous avez fait ces corrections plus d'une fois. Acceptez-en une et Hikaya l'applique à chaque dictée.",
+      "empty": "Aucune suggestion pour l'instant. Corrigez une dictée dans l'historique : les corrections répétées apparaissent ici.",
+      "count_one": "Corrigé {{count}} fois",
+      "count_other": "Corrigé {{count}} fois",
+      "accept": "Toujours remplacer",
+      "dismiss": "Ignorer"
+    },
+    "rules": {
+      "title": "Règles de remplacement",
+      "description": "Mots entiers uniquement, sans tenir compte des majuscules. Les règles s'appliquent à chaque dictée, avant tout nettoyage par IA.",
+      "patternLabel": "Quand Hikaya écrit",
+      "patternPlaceholder": "guitte hub",
+      "replacementLabel": "Le remplacer par",
+      "replacementPlaceholder": "GitHub",
+      "add": "Ajouter la règle",
+      "empty": "Aucune règle pour l'instant.",
+      "enable": "Utiliser la règle « {{pattern}} »",
+      "delete": "Supprimer la règle « {{pattern}} »",
+      "learned": "Apprise"
+    },
+    "errors": {
+      "load": "Impossible de charger vos règles",
+      "save": "Impossible d'enregistrer la règle",
+      "delete": "Impossible de supprimer la règle",
+      "proposal": "Impossible de mettre à jour la suggestion"
+    }
+  },
+  "correction": {
+    "edit": "Corriger ce texte",
+    "label": "Texte corrigé",
+    "hint": "Corrigez les erreurs de Hikaya. Il apprend des mots que vous changez.",
+    "save": "Enregistrer la correction",
+    "cancel": "Annuler",
+    "failed": "Impossible d'enregistrer la correction",
+    "learned_one": "{{count}} correction notée : {{list}}",
+    "learned_other": "{{count}} corrections notées : {{list}}",
+    "savedNothingLearned": "Texte enregistré. Aucun remplacement de mot à retenir."
+  }
+}

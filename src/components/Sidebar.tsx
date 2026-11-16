@@ -1,7 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
-import HandyTextLogo from "./icons/HandyTextLogo";
+import {
+  Cog,
+  FlaskConical,
+  GraduationCap,
+  History,
+  Info,
+  Sparkles,
+  Cpu,
+} from "lucide-react";
+import HikayaTextLogo from "./hikaya/HikayaTextLogo";
+import { LearningSettings } from "./hikaya/LearningSettings";
 import HandyHand from "./icons/HandyHand";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -42,6 +51,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  learning: {
+    labelKey: "hikaya.sidebar",
+    icon: GraduationCap,
+    component: LearningSettings,
     enabled: () => true,
   },
   models: {
@@ -94,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <div className="flex flex-col w-40 h-full border-e border-line items-center px-2">
-      <HandyTextLogo width={120} className="m-4" />
+      <HikayaTextLogo width={120} className="m-4" />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-line">
         {availableSections.map((section) => {
           const Icon = section.icon;

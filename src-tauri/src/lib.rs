@@ -11,6 +11,7 @@ mod clipboard;
 mod commands;
 pub mod engine_supervisor;
 mod helpers;
+mod hikaya;
 mod input;
 mod language_detection;
 mod languages;
@@ -215,6 +216,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    hikaya::init(app_handle);
 
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
@@ -809,6 +811,14 @@ pub fn run(cli_args: CliArgs) {
             commands::history::toggle_history_entry_saved,
             commands::history::get_audio_file_path,
             commands::history::delete_history_entry,
+            hikaya::commands::hikaya_list_rules,
+            hikaya::commands::hikaya_add_rule,
+            hikaya::commands::hikaya_set_rule_enabled,
+            hikaya::commands::hikaya_delete_rule,
+            hikaya::commands::hikaya_list_proposals,
+            hikaya::commands::hikaya_accept_proposal,
+            hikaya::commands::hikaya_dismiss_proposal,
+            hikaya::commands::hikaya_correct_history_entry,
             commands::history::retry_history_entry_transcription,
             commands::history::cancel_history_entry_transcription,
             commands::history::transcribe_file,
