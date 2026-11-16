@@ -43,19 +43,26 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
 
 ## Phases
 
-### v0.1: Dictation baseline
+Status as of 2026-11-16: v0.1–v0.3 are built and tested on Linux, and v0.2.0 is the first release
+for Windows testing. The hub runs on the owner's home server. Meetings are next.
+
+### v0.1: Dictation baseline (done)
 
 - Upstream Handy, rebranded, with EN/FR defaults and Ollama post-processing presets.
 - Windows build from CI. Daily use, with issues filed for anything that gets in the way.
 
-### v0.2: Learning loop
+### v0.2: Learning loop (mostly done, in 0.2.0)
 
 - Personal dictionary that biases the STT prompt and the LLM cleanup.
 - Correction mining: edit a past dictation, a word-level diff is stored, and a substitution seen
   2 or more times is proposed as a replacement rule.
 - Recent corrections become few-shot examples for cleanup. Stats page (WPM, top corrections).
 
-### v0.3: Hub, vault and sync
+Done: correction mining, rule proposals, replacement rules, EN+FR filler removal, the mixed-language
+cleanup prompt with a guard against translation. Left: few-shot examples from corrections, the
+stats page, and aliases for the custom-words dictionary (Handy's own custom words are used as is).
+
+### v0.3: Hub, vault and sync (mostly done, in 0.2.0)
 
 - Rust (axum) service in Docker, reachable only over a private network (e.g. Tailscale), with
   per-device tokens.
@@ -63,6 +70,11 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
   is entered; clients queue their data meanwhile.
 - Sync for dictations, dictionary and rules from a client-side outbox. Web viewer with search.
 - Encrypted backups, with a tested restore.
+
+Done: vault and locked state, device tokens, sync of dictations, rules and corrections, search, web
+viewer, encrypted snapshots in the nightly backup, Docker deployment on the home server. Left:
+syncing the custom-words dictionary, and `age` encryption for audio (no audio is synced yet; it
+comes with meetings).
 
 ### v0.4: Meetings
 
@@ -73,9 +85,10 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
   on the GPU client, with the hub as fallback.
 - Export to Markdown, TXT and SRT. Audio retention settings. Recording indicator and consent reminder.
 
-### v0.5: Phone capture
+### v0.5: Phone capture (viewing done)
 
-- PWA recorder with chunked upload to the hub, and transcript/summary viewer.
+- Done: the hub's web viewer works on the iPhone (search, unlock, add to home screen).
+- PWA recorder with chunked upload to the hub.
 - iOS Shortcut: record, send to the hub, copy the result to the clipboard.
 
 ## Evaluation data
