@@ -88,7 +88,8 @@
       "description": "Records your microphone and what your computer plays (the other people on a call), then writes a transcript as the meeting goes.",
       "placeholder": "Meeting title (optional)",
       "button": "Start recording",
-      "consent": "Recording people without their agreement can be illegal. Tell everyone the meeting is recorded."
+      "consent": "Recording people without their agreement can be illegal. Tell everyone the meeting is recorded.",
+      "retention": "Meeting audio follows Advanced → Auto-Delete Recordings. Transcripts and summaries are always kept."
     },
     "recording": {
       "label": "Recording",

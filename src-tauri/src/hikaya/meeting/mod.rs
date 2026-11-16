@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod manager;
+pub mod retention;
 pub mod segments;
 pub mod store;
 pub mod summary;
