@@ -103,6 +103,11 @@ impl Vault {
         self.dir.join(DB_FILE)
     }
 
+    /// Where backup snapshots are written.
+    pub fn snapshot_dir(&self) -> PathBuf {
+        self.dir.join("snapshots")
+    }
+
     /// True once a vault has been created in this directory.
     pub fn is_initialized(&self) -> bool {
         self.header_path().is_file()
