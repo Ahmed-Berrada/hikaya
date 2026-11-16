@@ -6,6 +6,7 @@
 pub mod corrections;
 pub mod faithful;
 pub mod fillers;
+pub mod meeting;
 pub mod rules;
 pub mod sync;
 pub mod token;
