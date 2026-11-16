@@ -52,8 +52,23 @@ pub fn hikaya_meeting_get(store: Store<'_>, id: i64) -> Result<Option<MeetingDet
 
 #[tauri::command]
 #[specta::specta]
-pub fn hikaya_meeting_rename(store: Store<'_>, id: i64, title: String) -> Result<(), String> {
-    store.rename_meeting(id, &title).map_err(text_error)
+pub fn hikaya_meeting_rename(
+    app: AppHandle,
+    store: Store<'_>,
+    id: i64,
+    title: String,
+) -> Result<(), String> {
+    store.rename_meeting(id, &title).map_err(text_error)?;
+    sync_soon(&app);
+    Ok(())
+}
+
+/// Sends the change to the hub right away, if one is connected.
+fn sync_soon(app: &AppHandle) {
+    use tauri::Manager;
+    if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
+        sync.trigger();
+    }
 }
 
 #[tauri::command]
@@ -78,6 +93,7 @@ pub async fn hikaya_meeting_summarize(
     store
         .set_meeting_summary(id, &summary, model.name())
         .map_err(text_error)?;
+    sync_soon(&app);
     Ok(summary)
 }
 

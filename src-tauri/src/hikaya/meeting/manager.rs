@@ -250,6 +250,9 @@ impl MeetingManager {
                 log::error!("Meeting {id}: could not mark it done: {e:#}");
             }
             log::info!("Meeting {id} finished ({} s)", length / 1000);
+            if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
+                sync.trigger();
+            }
             MeetingManager::emit(&app, id);
         });
         Ok(id)
