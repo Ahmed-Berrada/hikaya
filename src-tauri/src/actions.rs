@@ -488,6 +488,12 @@ pub(crate) async fn process_transcription_output(
         match outcome {
             PostProcessOutcome::Skipped => {}
             PostProcessOutcome::Failed => post_process_failed = true,
+            // Hikaya: a cleanup that translated or rewrote the text is dropped.
+            PostProcessOutcome::Done(processed_text)
+                if !crate::hikaya::cleanup::accepts(&settings, &final_text, &processed_text) =>
+            {
+                post_process_failed = true;
+            }
             PostProcessOutcome::Done(processed_text) => {
                 post_processed_text = Some(processed_text.clone());
                 final_text = processed_text;

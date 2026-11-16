@@ -8,6 +8,7 @@ here runs and is tested on any machine.
 | `token`       | Splits text into words with their surrounding punctuation, and joins them back.    |
 | `fillers`     | Removes hesitation words for all of the speaker's languages at once (EN/FR mixed). |
 | `rules`       | Whole-word replacement rules ("get hub" → "GitHub"), optionally per application.   |
+| `faithful`    | Rejects an AI cleanup that translated, answered or rewrote the text.               |
 | `corrections` | Turns a user's edit into word substitutions and proposes rules from repeated ones. |
 
 ```bash

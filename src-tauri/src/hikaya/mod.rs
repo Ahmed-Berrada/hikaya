@@ -5,6 +5,7 @@
 //! it to the app: storage in the app data directory, the dictation pipeline
 //! and the Tauri commands the UI calls.
 
+pub mod cleanup;
 pub mod commands;
 pub mod stage;
 pub mod store;
