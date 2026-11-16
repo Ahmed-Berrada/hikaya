@@ -62,6 +62,40 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
     );
     CREATE TABLE sync_counter (id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL);
     INSERT INTO sync_counter (id, seq) VALUES (1, 0);",
+    // Meetings: the transcript is stored as JSON lines plus a plain-text copy
+    // for search.
+    "CREATE TABLE meetings (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id),
+        title TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        summary TEXT,
+        lines_json TEXT NOT NULL,
+        transcript TEXT NOT NULL,
+        line_count INTEGER NOT NULL,
+        received_at INTEGER NOT NULL
+    );
+    CREATE INDEX meetings_started_at ON meetings (started_at DESC);
+    CREATE VIRTUAL TABLE meetings_fts USING fts5(
+        title, summary, transcript, content='meetings', content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER meetings_ai AFTER INSERT ON meetings BEGIN
+        INSERT INTO meetings_fts (rowid, title, summary, transcript)
+        VALUES (new.rowid, new.title, coalesce(new.summary, ''), new.transcript);
+    END;
+    CREATE TRIGGER meetings_ad AFTER DELETE ON meetings BEGIN
+        INSERT INTO meetings_fts (meetings_fts, rowid, title, summary, transcript)
+        VALUES ('delete', old.rowid, old.title, coalesce(old.summary, ''), old.transcript);
+    END;
+    CREATE TRIGGER meetings_au AFTER UPDATE ON meetings BEGIN
+        INSERT INTO meetings_fts (meetings_fts, rowid, title, summary, transcript)
+        VALUES ('delete', old.rowid, old.title, coalesce(old.summary, ''), old.transcript);
+        INSERT INTO meetings_fts (rowid, title, summary, transcript)
+        VALUES (new.rowid, new.title, coalesce(new.summary, ''), new.transcript);
+    END;",
 ];
 
 /// Brings the database to the current schema. Each migration and its version

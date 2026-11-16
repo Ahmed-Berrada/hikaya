@@ -13,6 +13,8 @@
 //! | `POST /api/sync/push`       | a device              | sends dictations, rules, corrections |
 //! | `GET  /api/sync/pull`       | a device              | rule changes since a cursor          |
 //! | `GET  /api/dictations`      | a device              | lists or searches the archive        |
+//! | `GET  /api/meetings`        | a device              | lists or searches meetings           |
+//! | `GET  /api/meetings/{id}`   | a device              | one meeting with its transcript      |
 //!
 //! While the hub is locked, anything that needs data answers `423 Locked`,
 //! which tells a client to keep its changes queued and try again later.
@@ -336,6 +338,34 @@ async fn sync_pull(
     ))
 }
 
+async fn list_meetings(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Query(query): Query<DictationsQuery>,
+) -> Result<Json<Vec<crate::meetings::MeetingView>>, ApiError> {
+    let conn = data_connection(&state)?;
+    let found = crate::meetings::list(
+        &conn,
+        query.q.as_deref(),
+        query.before,
+        query.limit.unwrap_or(50),
+    )
+    .map_err(ApiError::internal)?;
+    Ok(Json(found))
+}
+
+async fn get_meeting(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Path(id): Path<String>,
+) -> Result<Json<crate::meetings::MeetingDetailView>, ApiError> {
+    let conn = data_connection(&state)?;
+    crate::meetings::detail(&conn, &id)
+        .map_err(ApiError::internal)?
+        .map(Json)
+        .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "not_found", "no such meeting"))
+}
+
 #[derive(Deserialize)]
 struct DictationsQuery {
     q: Option<String>,
@@ -372,6 +402,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/sync/push", post(sync_push))
         .route("/api/sync/pull", get(sync_pull))
         .route("/api/dictations", get(list_dictations))
+        .route("/api/meetings", get(list_meetings))
+        .route("/api/meetings/{id}", get(get_meeting))
         // 500 records of up to 200 KB each would be 100 MB; real pushes are
         // far smaller. 16 MB bounds memory use per request.
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
