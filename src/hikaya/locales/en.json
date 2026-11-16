@@ -1,0 +1,44 @@
+{
+  "sidebar": "Learning",
+  "learning": {
+    "proposals": {
+      "title": "Suggested rules",
+      "description": "You made these corrections more than once. Accept one and Hikaya applies it to every dictation.",
+      "empty": "No suggestions yet. Correct a dictation in History, and repeated fixes show up here.",
+      "count_one": "Corrected {{count}} time",
+      "count_other": "Corrected {{count}} times",
+      "accept": "Always replace",
+      "dismiss": "Ignore"
+    },
+    "rules": {
+      "title": "Replacement rules",
+      "description": "Whole words only, in any letter case. Rules run on every dictation, before any AI cleanup.",
+      "patternLabel": "When Hikaya writes",
+      "patternPlaceholder": "get hub",
+      "replacementLabel": "Replace it with",
+      "replacementPlaceholder": "GitHub",
+      "add": "Add rule",
+      "empty": "No rules yet.",
+      "enable": "Use the rule “{{pattern}}”",
+      "delete": "Delete the rule “{{pattern}}”",
+      "learned": "Learned"
+    },
+    "errors": {
+      "load": "Couldn't load your rules",
+      "save": "Couldn't save the rule",
+      "delete": "Couldn't delete the rule",
+      "proposal": "Couldn't update the suggestion"
+    }
+  },
+  "correction": {
+    "edit": "Correct this text",
+    "label": "Corrected text",
+    "hint": "Fix what Hikaya got wrong. It learns from the words you change.",
+    "save": "Save correction",
+    "cancel": "Cancel",
+    "failed": "Couldn't save the correction",
+    "learned_one": "Noted {{count}} correction: {{list}}",
+    "learned_other": "Noted {{count}} corrections: {{list}}",
+    "savedNothingLearned": "Text saved. No word replacement to learn from."
+  }
+}

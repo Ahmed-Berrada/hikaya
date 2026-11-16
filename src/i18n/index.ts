@@ -3,7 +3,7 @@ import { initReactI18next } from "react-i18next";
 import { locale } from "@tauri-apps/plugin-os";
 import { LANGUAGE_METADATA } from "./languages";
 import { commands } from "@/bindings";
-import { rebrandTranslations } from "@/hikaya/brand";
+import { withHikayaTranslations } from "@/hikaya/translations";
 import {
   getLanguageDirection,
   updateDocumentDirection,
@@ -21,7 +21,9 @@ const resources: Record<string, { translation: Record<string, unknown> }> = {};
 for (const [path, module] of Object.entries(localeModules)) {
   const langCode = path.match(/\.\/locales\/(.+)\/translation\.json/)?.[1];
   if (langCode) {
-    resources[langCode] = { translation: rebrandTranslations(module.default) };
+    resources[langCode] = {
+      translation: withHikayaTranslations(langCode, module.default),
+    };
   }
 }
 

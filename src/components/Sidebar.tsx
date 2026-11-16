@@ -1,7 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Cpu } from "lucide-react";
+import {
+  Cog,
+  FlaskConical,
+  GraduationCap,
+  History,
+  Info,
+  Sparkles,
+  Cpu,
+} from "lucide-react";
 import HikayaTextLogo from "./hikaya/HikayaTextLogo";
+import { LearningSettings } from "./hikaya/LearningSettings";
 import HandyHand from "./icons/HandyHand";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -42,6 +51,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  learning: {
+    labelKey: "hikaya.sidebar",
+    icon: GraduationCap,
+    component: LearningSettings,
     enabled: () => true,
   },
   models: {
