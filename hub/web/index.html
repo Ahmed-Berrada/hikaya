@@ -68,6 +68,22 @@
       <p id="uninitialized" class="card hint" hidden data-t="uninitialized"></p>
 
       <section id="archive" hidden>
+        <nav class="tabs" role="tablist">
+          <button
+            id="tab-dictations"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-t="dictations"
+          ></button>
+          <button
+            id="tab-meetings"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-t="meetings"
+          ></button>
+        </nav>
         <form id="search" role="search">
           <input
             id="q"
@@ -77,6 +93,14 @@
           />
         </form>
         <ol id="results"></ol>
+        <article id="meeting" hidden>
+          <button id="back" type="button" class="link" data-t="back"></button>
+          <h2 id="meeting-title"></h2>
+          <p id="meeting-meta" class="hint"></p>
+          <section id="meeting-summary" class="card" hidden></section>
+          <h3 data-t="transcript"></h3>
+          <ol id="meeting-lines"></ol>
+        </article>
         <p id="empty" class="hint" hidden></p>
         <button id="more" type="button" hidden data-t="more"></button>
         <footer>

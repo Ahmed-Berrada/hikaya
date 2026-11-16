@@ -168,3 +168,67 @@ footer {
 .error {
   color: var(--danger);
 }
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.tabs button {
+  flex: 1;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.tabs button[aria-selected="true"] {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+#results li.clickable {
+  cursor: pointer;
+}
+#results .title {
+  font-weight: 600;
+}
+#meeting h2 {
+  margin-top: 12px;
+}
+#meeting h3 {
+  font-size: 1rem;
+  margin: 16px 0 4px;
+}
+#meeting-summary h4 {
+  margin: 4px 0;
+  font-size: 0.95rem;
+}
+#meeting-summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+#meeting-summary p {
+  margin: 0;
+}
+#meeting-lines {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+#meeting-lines li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  line-height: 1.45;
+}
+#meeting-lines .time {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-right: 6px;
+  font-variant-numeric: tabular-nums;
+}
+#meeting-lines .speaker {
+  font-weight: 600;
+  margin-right: 4px;
+}
+#meeting-lines .speaker.you {
+  color: var(--accent);
+}
