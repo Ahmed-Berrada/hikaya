@@ -11,6 +11,7 @@ mod clipboard;
 mod commands;
 pub mod engine_supervisor;
 mod helpers;
+mod hikaya;
 mod input;
 mod language_detection;
 mod languages;
@@ -215,6 +216,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    hikaya::init(app_handle);
 
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
