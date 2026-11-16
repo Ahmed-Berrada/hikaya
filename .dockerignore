@@ -1,0 +1,7 @@
+# Only the hub and the core crate go into the hub image.
+*
+!hub/
+!crates/hikaya-core/
+hub/target/
+hub/data/
+crates/hikaya-core/target/
