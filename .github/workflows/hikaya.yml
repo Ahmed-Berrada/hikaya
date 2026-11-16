@@ -10,12 +10,14 @@ on:
     paths:
       - "crates/**"
       - "hub/**"
+      - ".dockerignore"
       - "src/hikaya/**"
       - ".github/workflows/hikaya.yml"
   pull_request:
     paths:
       - "crates/**"
       - "hub/**"
+      - ".dockerignore"
       - "src/hikaya/**"
       - ".github/workflows/hikaya.yml"
 
@@ -85,6 +87,33 @@ jobs:
 
       - name: Tests
         run: cargo test --locked
+
+  hub-image:
+    name: hikaya-hub image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build
+        run: docker build -f hub/Dockerfile -t hikaya-hub:ci .
+
+      - name: Smoke test
+        run: |
+          # Created first, or Docker makes it root-owned and the hub cannot write.
+          mkdir -p "$RUNNER_TEMP/hub"
+          docker run -d --name hub --read-only --cap-drop ALL --tmpfs /tmp \
+            -v "$RUNNER_TEMP/hub:/data" --user "$(id -u):$(id -g)" -p 127.0.0.1:8787:8787 hikaya-hub:ci
+          for _ in $(seq 1 30); do curl -fs http://127.0.0.1:8787/api/status && break; sleep 1; done
+          curl -fs http://127.0.0.1:8787/api/status | grep -q '"uninitialized"'
+          curl -fs -X POST http://127.0.0.1:8787/api/init -H 'content-type: application/json' \
+            -d '{"passphrase":"ci smoke test passphrase"}' | grep -q '"unlocked"'
+          docker restart hub
+          for _ in $(seq 1 30); do curl -fs http://127.0.0.1:8787/api/status && break; sleep 1; done
+          curl -fs http://127.0.0.1:8787/api/status | grep -q '"locked"'
+
+      - name: Logs
+        if: failure()
+        run: docker logs hub
 
   frontend:
     name: hikaya frontend

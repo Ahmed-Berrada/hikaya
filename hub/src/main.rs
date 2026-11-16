@@ -9,6 +9,7 @@ use std::path::PathBuf;
 /// - `HIKAYA_HUB_DATA`: directory for the vault (default `./data`).
 /// - `HIKAYA_HUB_LISTEN`: address to listen on (default `127.0.0.1:8787`).
 ///   Bind it to a private-network address only; the hub has no TLS of its own.
+/// - `HIKAYA_HUB_SNAPSHOT_HOURS`: hours between backup snapshots (default 6).
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -31,6 +32,29 @@ async fn main() -> Result<()> {
         "Hikaya hub {} listening on http://{listen}",
         env!("CARGO_PKG_VERSION")
     );
+
+    // A consistent, encrypted snapshot for the nightly backup, every few hours
+    // while unlocked. See hub/README.md, "Backups".
+    let every: u64 = std::env::var("HIKAYA_HUB_SNAPSHOT_HOURS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6);
+    let snapshots = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(every.max(1) * 3600));
+        tick.tick().await; // the first tick is immediate; skip it
+        loop {
+            tick.tick().await;
+            let worker = snapshots.clone();
+            let stamp = hikaya_hub::snapshot::stamp(std::time::SystemTime::now());
+            match tokio::task::spawn_blocking(move || worker.snapshot(&stamp)).await {
+                Ok(Ok(Some(path))) => tracing::info!(path = %path.display(), "snapshot written"),
+                Ok(Ok(None)) => tracing::info!("hub locked; snapshot skipped"),
+                Ok(Err(e)) => tracing::error!("snapshot failed: {e:#}"),
+                Err(e) => tracing::error!("snapshot task failed: {e}"),
+            }
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind(listen)
         .await

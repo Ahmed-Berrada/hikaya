@@ -3,8 +3,8 @@
 A small server you run on a machine you own. It keeps the complete archive of your dictations and
 meetings, encrypted, and lets your devices sync through it. Design: [ADR 0002](../docs/adr/0002-linux-dev-and-hub-archive.md).
 
-**Status:** the vault, device access and sync work. The desktop app does not sync yet; that,
-the web viewer and background jobs are next (roadmap v0.3).
+**Status:** the vault, device access, sync, snapshots and Docker packaging work. The web viewer and
+background jobs are next (roadmap v0.3).
 
 ## How the vault works
 
@@ -63,6 +63,40 @@ The device token is shown once. Only its SHA-256 is stored.
 - Search matches whole words and word starts, ignoring case and accents.
 
 Errors are JSON: `{"error": "<code>", "message": "<text>"}`.
+
+## Deploy with Docker
+
+On the machine that will hold the archive (Linux with Docker):
+
+```bash
+mkdir -p ~/hikaya-data && chmod 700 ~/hikaya-data
+HIKAYA_HUB_DATA_DIR=$HOME/hikaya-data HIKAYA_HUB_UID=$(id -u) HIKAYA_HUB_GID=$(id -g) \
+  docker compose -f hub/compose.yaml up -d --build
+curl http://127.0.0.1:8787/api/status          # {"state":"uninitialized",...}
+```
+
+The container runs as your user (so your backups can read the files), with a read-only filesystem
+and no extra privileges, and publishes the port on `127.0.0.1` only.
+
+To reach it from your other devices, put it on your Tailscale network with HTTPS:
+
+```bash
+sudo tailscale serve --bg --https=443 http://127.0.0.1:8787
+tailscale serve status                          # shows https://<machine>.<tailnet>.ts.net
+```
+
+Then, in the Hikaya app: **Sync → Hub address** `https://<machine>.<tailnet>.ts.net`, a device
+name, and a passphrase. On a new hub that passphrase creates the vault. Until then, any device on
+your tailnet could create it, so connect your first device right after starting the hub.
+
+After the machine reboots, the hub is locked. Unlock it from **Sync** in the app on any device.
+
+## Backups
+
+While unlocked, the hub writes a consistent snapshot of its database to `snapshots/` every
+`HIKAYA_HUB_SNAPSHOT_HOURS` (default 6) and keeps the newest three. Snapshots are encrypted with the
+same key as the live database. Back up `vault.json` and `snapshots/`; the live `hub.db` can be
+skipped. To restore, copy a snapshot to `hub.db` next to `vault.json` and unlock with the passphrase.
 
 ## Develop
 

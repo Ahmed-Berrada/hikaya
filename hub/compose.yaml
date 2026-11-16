@@ -1,0 +1,25 @@
+# Runs the hub on this machine. Data lives in ./data next to this file unless
+# HIKAYA_HUB_DATA_DIR says otherwise; keep it out of any synced folder.
+#
+#   HIKAYA_HUB_DATA_DIR=$HOME/hikaya-data docker compose -f hub/compose.yaml up -d --build
+#
+# The port is published on 127.0.0.1 only. Reach it from your other devices
+# through `tailscale serve` (HTTPS on your tailnet); see hub/README.md.
+name: hikaya
+
+services:
+  hub:
+    build:
+      context: ..
+      dockerfile: hub/Dockerfile
+    image: hikaya-hub:local
+    restart: unless-stopped
+    user: "${HIKAYA_HUB_UID:-10001}:${HIKAYA_HUB_GID:-10001}"
+    ports:
+      - "127.0.0.1:${HIKAYA_HUB_PORT:-8787}:8787"
+    volumes:
+      - "${HIKAYA_HUB_DATA_DIR:-./data}:/data"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp"]

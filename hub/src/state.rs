@@ -143,6 +143,19 @@ impl AppState {
         }
     }
 
+    /// Writes a backup snapshot if the hub is unlocked. Returns `None` while
+    /// locked: nothing new can have been written then.
+    pub fn snapshot(&self, stamp: &str) -> Result<Option<std::path::PathBuf>> {
+        match self.connection()? {
+            Some(conn) => Ok(Some(crate::snapshot::take(
+                &conn,
+                &self.vault.snapshot_dir(),
+                stamp,
+            )?)),
+            None => Ok(None),
+        }
+    }
+
     /// The device a bearer token belongs to. `Ok(None)` when the token is
     /// unknown or revoked; `Err(Locked)` semantics are the caller's: check
     /// [`AppState::lock_state`] first.
