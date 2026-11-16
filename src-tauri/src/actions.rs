@@ -929,7 +929,7 @@ impl ShortcutAction for TranscribeAction {
                                             || RECORDING_SESSION.load(Ordering::SeqCst) == session;
                                         let (outcome, notice) =
                                             match utils::paste(final_text, ah_clone.clone()) {
-                                                Ok(()) => {
+                                                Ok(utils::PasteOutcome::Pasted) => {
                                                     debug!(
                                                         "Text pasted successfully in {:?}",
                                                         paste_time.elapsed()
@@ -949,6 +949,13 @@ impl ShortcutAction for TranscribeAction {
                                                     });
                                                     (TranscriptionOutcome::Typed, notice)
                                                 }
+                                                Ok(utils::PasteOutcome::Blocked) => (
+                                                    TranscriptionOutcome::Failed,
+                                                    Some(Notice::new(
+                                                        NoticeCode::PasteBlockedElevated,
+                                                        NoticeSource::Dictation,
+                                                    )),
+                                                ),
                                                 Err(e) => {
                                                     error!("Failed to paste transcription: {}", e);
                                                     (
