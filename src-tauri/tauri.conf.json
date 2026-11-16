@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Handy",
-  "version": "0.10.0",
-  "identifier": "com.pais.handy",
+  "productName": "Hikaya",
+  "version": "0.1.0",
+  "identifier": "com.ahmedberrada.hikaya",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -51,7 +51,7 @@
           "libssl3t64 | libssl3"
         ],
         "files": {
-          "/usr/lib/Handy": "transcribe-libs"
+          "/usr/lib/Hikaya": "transcribe-libs"
         }
       },
       "rpm": {
@@ -63,7 +63,7 @@
           "type": "none"
         },
         "files": {
-          "/usr/lib/Handy": "transcribe-libs"
+          "/usr/lib/Hikaya": "transcribe-libs"
         }
       },
       "appimage": {
