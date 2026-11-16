@@ -80,5 +80,65 @@
     "connectedTo": "Connected to {{url}} as “{{name}}”",
     "failed": "Couldn't reach the hub",
     "statusLabel": "Sync status"
+  },
+  "meetings": {
+    "sidebar": "Meetings",
+    "start": {
+      "title": "Record a meeting",
+      "description": "Records your microphone and what your computer plays (the other people on a call), then writes a transcript as the meeting goes.",
+      "placeholder": "Meeting title (optional)",
+      "button": "Start recording",
+      "consent": "Recording people without their agreement can be illegal. Tell everyone the meeting is recorded."
+    },
+    "recording": {
+      "label": "Recording",
+      "stop": "Stop",
+      "microphone": "Microphone: {{name}}",
+      "system": "Other people: {{name}}",
+      "noSystem": "Only your microphone is recorded: the computer's audio could not be captured.",
+      "liveEmpty": "The transcript appears here every 30 seconds."
+    },
+    "list": {
+      "title": "Past meetings",
+      "empty": "No meetings yet.",
+      "lines_one": "{{count}} line",
+      "lines_other": "{{count}} lines"
+    },
+    "status": {
+      "recording": "Recording",
+      "transcribing": "Transcribing…",
+      "done": "Done",
+      "interrupted": "Interrupted"
+    },
+    "detail": {
+      "back": "All meetings",
+      "rename": "Rename",
+      "save": "Save",
+      "summary": "Summary",
+      "transcript": "Transcript",
+      "summarize": "Summarize",
+      "resummarize": "Summarize again",
+      "summarizing": "Summarizing…",
+      "noSummary": "No summary yet. Summaries use the AI provider chosen in Post Processing.",
+      "noLines": "Nothing was transcribed.",
+      "copy": "Copy as Markdown",
+      "copied": "Copied",
+      "saveMarkdown": "Save as Markdown…",
+      "saveSrt": "Save as subtitles (SRT)…",
+      "delete": "Delete",
+      "deleteConfirm": "Delete this meeting, its transcript and its audio? This cannot be undone."
+    },
+    "speakers": {
+      "you": "You",
+      "others": "Others"
+    },
+    "errors": {
+      "start": "Couldn't start the meeting",
+      "stop": "Couldn't stop the meeting",
+      "summary": "Couldn't summarize the meeting",
+      "export": "Couldn't export the meeting",
+      "delete": "Couldn't delete the meeting",
+      "rename": "Couldn't rename the meeting"
+    }
   }
 }

@@ -64,6 +64,31 @@ const MIGRATIONS: &[M] = &[
     );
     CREATE TABLE sync_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
     ),
+    // Meetings (roadmap v0.4, ADR 0003).
+    M::up(
+        "CREATE TABLE meetings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'recording',
+        system_audio INTEGER NOT NULL DEFAULT 0,
+        summary TEXT,
+        summary_model TEXT,
+        updated_at INTEGER NOT NULL,
+        synced INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE meeting_lines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+        start_ms INTEGER NOT NULL,
+        end_ms INTEGER NOT NULL,
+        speaker TEXT NOT NULL,
+        text TEXT NOT NULL
+    );
+    CREATE INDEX meeting_lines_meeting ON meeting_lines (meeting_id, start_ms);",
+    ),
 ];
 
 /// A replacement rule as stored and as shown in the UI.

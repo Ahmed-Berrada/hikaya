@@ -828,6 +828,16 @@ pub fn run(cli_args: CliArgs) {
             hikaya::commands::hikaya_hub_unlock,
             hikaya::commands::hikaya_hub_sync_now,
             hikaya::commands::hikaya_hub_disconnect,
+            hikaya::meeting::commands::hikaya_meeting_start,
+            hikaya::meeting::commands::hikaya_meeting_stop,
+            hikaya::meeting::commands::hikaya_meeting_active,
+            hikaya::meeting::commands::hikaya_meetings_list,
+            hikaya::meeting::commands::hikaya_meeting_get,
+            hikaya::meeting::commands::hikaya_meeting_rename,
+            hikaya::meeting::commands::hikaya_meeting_delete,
+            hikaya::meeting::commands::hikaya_meeting_summarize,
+            hikaya::meeting::commands::hikaya_meeting_export,
+            hikaya::meeting::commands::hikaya_meeting_save_export,
             commands::history::retry_history_entry_transcription,
             commands::history::cancel_history_entry_transcription,
             commands::history::transcribe_file,
@@ -931,6 +941,8 @@ pub fn run(cli_args: CliArgs) {
                 signal_handle::send_transcription_input(app, "transcribe", "CLI");
             } else if args.iter().any(|a| a == "--toggle-post-process") {
                 signal_handle::send_transcription_input(app, "transcribe_with_post_process", "CLI");
+            } else if args.iter().any(|a| a == "--toggle-meeting") {
+                hikaya::toggle_meeting(app);
             } else if args.iter().any(|a| a == "--cancel") {
                 crate::utils::cancel_current_operation(app);
             } else {

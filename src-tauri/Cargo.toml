@@ -79,6 +79,7 @@ isolang = "2"
 chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 hikaya-core = { path = "../crates/hikaya-core" }
+hikaya-capture = { path = "../crates/hikaya-capture" }
 sha2 = "0.10"
 libc = "0.2"
 # Every model runs through transcribe-cpp (GGUF/ggml, native backends).

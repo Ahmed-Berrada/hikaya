@@ -7,6 +7,7 @@
 
 pub mod cleanup;
 pub mod commands;
+pub mod meeting;
 pub mod stage;
 pub mod store;
 pub mod sync;
@@ -15,6 +16,21 @@ pub mod sync_worker;
 use std::sync::Arc;
 use store::LearningStore;
 use tauri::{AppHandle, Manager};
+
+/// Starts or stops a meeting, as `--toggle-meeting` asks.
+pub fn toggle_meeting(app: &AppHandle) {
+    let Some(meetings) = app.try_state::<Arc<meeting::manager::MeetingManager>>() else {
+        return;
+    };
+    let result = if meetings.active().is_some() {
+        meetings.stop().map(|_| ())
+    } else {
+        meetings.start("").map(|_| ())
+    };
+    if let Err(e) = result {
+        log::error!("Could not toggle the meeting: {e:#}");
+    }
+}
 
 /// Opens the learning database and registers it as Tauri state.
 ///
@@ -30,5 +46,9 @@ pub fn init(app: &AppHandle) {
     });
     let store = Arc::new(store);
     app.manage(store.clone());
+    app.manage(Arc::new(meeting::manager::MeetingManager::new(
+        app,
+        store.clone(),
+    )));
     sync_worker::start(app, store);
 }

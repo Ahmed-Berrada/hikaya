@@ -25,6 +25,8 @@ export interface MockOptions {
   proposals?: MockProposal[];
   /** Version the fake app reports. */
   appVersion?: string;
+  /** Meetings the fake backend starts with. */
+  meetings?: Record<string, unknown>[];
   /** Starting state of the fake hub connection. */
   hub?: Record<string, unknown>;
   /** Dictations the fake History starts with. */
@@ -43,7 +45,7 @@ export interface MockOptions {
 export const mockTauri = async (page: Page, options: MockOptions = {}) => {
   const settings = { ...defaultSettings, ...options.settings };
   await page.addInitScript(
-    ({ settings, locale, proposals, history, hub, appVersion }) => {
+    ({ settings, locale, proposals, history, hub, appVersion, meetings }) => {
       type Rule = {
         id: number;
         pattern: string;
@@ -67,6 +69,9 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           last_sync_at: null as number | null,
         },
         hubPassphrase: "correct horse battery staple",
+        meetings: [...meetings] as any[],
+        activeMeeting: null as any,
+        saved: [] as { path: string; contents: string }[],
         history: history.map(({ id, text }) => ({
           id,
           file_name: `hikaya-${id}.wav`,
@@ -130,6 +135,98 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           );
           return null;
         },
+        hikaya_meeting_active: () => state.activeMeeting,
+        hikaya_meetings_list: () =>
+          state.meetings.map((m) => ({
+            id: m.id,
+            title: m.title,
+            started_at: m.started_at,
+            duration_ms: m.duration_ms,
+            status: m.status,
+            system_audio: m.system_audio,
+            has_summary: !!m.summary,
+            line_count: m.lines.length,
+          })),
+        hikaya_meeting_get: ({ id }) => {
+          const m = state.meetings.find((x) => x.id === id);
+          if (!m) return null;
+          return {
+            meeting: {
+              id: m.id,
+              title: m.title,
+              started_at: m.started_at,
+              duration_ms: m.duration_ms,
+              status: m.status,
+              system_audio: m.system_audio,
+              has_summary: !!m.summary,
+              line_count: m.lines.length,
+            },
+            lines: m.lines,
+            summary: m.summary ?? null,
+          };
+        },
+        hikaya_meeting_start: ({ title }) => {
+          const id = state.meetings.length + 100;
+          state.activeMeeting = {
+            id,
+            title: title.trim() || "2026-11-16 18:00",
+            started_at: Date.now() - 65_000,
+            microphone: "Laptop microphone",
+            system_audio: "Monitor of Speakers",
+            system_audio_error: null,
+          };
+          state.meetings.push({
+            id,
+            title: state.activeMeeting.title,
+            started_at: state.activeMeeting.started_at,
+            duration_ms: 0,
+            status: "recording",
+            system_audio: true,
+            lines: [
+              {
+                start_ms: 0,
+                end_ms: 30000,
+                speaker: "others",
+                text: "Bonjour, on commence ?",
+              },
+            ],
+          });
+          return state.activeMeeting;
+        },
+        hikaya_meeting_stop: () => {
+          const m = state.meetings.find(
+            (x) => x.id === state.activeMeeting?.id,
+          );
+          if (m) Object.assign(m, { status: "done", duration_ms: 65_000 });
+          const id = state.activeMeeting?.id;
+          state.activeMeeting = null;
+          return id;
+        },
+        hikaya_meeting_summarize: ({ id }) => {
+          const m = state.meetings.find((x) => x.id === id);
+          m.summary =
+            "## TL;DR\nLa démo est décalée à jeudi.\n\n## Action items\n- [ ] You: prévenir Sarah";
+          return m.summary;
+        },
+        hikaya_meeting_rename: ({ id, title }) => {
+          state.meetings.find((x) => x.id === id).title = title.trim();
+          return null;
+        },
+        hikaya_meeting_delete: ({ id }) => {
+          state.meetings = state.meetings.filter((x) => x.id !== id);
+          return null;
+        },
+        hikaya_meeting_export: ({ id, format, labels }) => {
+          const m = state.meetings.find((x) => x.id === id);
+          return format === "srt"
+            ? "1\n00:00:00,000 --> 00:00:30,000\n"
+            : `# ${m.title}\n\n## ${labels.transcript}\n`;
+        },
+        hikaya_meeting_save_export: ({ path, contents }) => {
+          state.saved.push({ path, contents });
+          return null;
+        },
+        "plugin:dialog|save": () => "/home/user/Documents/meeting.md",
         hikaya_hub_status: () => ({ ...state.hub }),
         hikaya_hub_connect: ({ url, deviceName, passphrase }) => {
           if (!/^https?:\/\//.test(url)) {
@@ -239,6 +336,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       history: options.history ?? [],
       hub: options.hub ?? {},
       appVersion: options.appVersion ?? "0.2.0",
+      meetings: options.meetings ?? [],
     },
   );
 };

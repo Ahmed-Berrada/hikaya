@@ -80,5 +80,65 @@
     "connectedTo": "Connecté à {{url}} en tant que « {{name}} »",
     "failed": "Impossible de joindre le hub",
     "statusLabel": "État de la synchronisation"
+  },
+  "meetings": {
+    "sidebar": "Réunions",
+    "start": {
+      "title": "Enregistrer une réunion",
+      "description": "Enregistre votre micro et ce que joue votre ordinateur (les autres participants d'un appel), puis écrit la transcription au fil de la réunion.",
+      "placeholder": "Titre de la réunion (facultatif)",
+      "button": "Démarrer l'enregistrement",
+      "consent": "Enregistrer des personnes sans leur accord peut être illégal. Prévenez tout le monde que la réunion est enregistrée."
+    },
+    "recording": {
+      "label": "Enregistrement",
+      "stop": "Arrêter",
+      "microphone": "Micro : {{name}}",
+      "system": "Autres participants : {{name}}",
+      "noSystem": "Seul votre micro est enregistré : le son de l'ordinateur n'a pas pu être capturé.",
+      "liveEmpty": "La transcription apparaît ici toutes les 30 secondes."
+    },
+    "list": {
+      "title": "Réunions passées",
+      "empty": "Aucune réunion pour l'instant.",
+      "lines_one": "{{count}} ligne",
+      "lines_other": "{{count}} lignes"
+    },
+    "status": {
+      "recording": "Enregistrement",
+      "transcribing": "Transcription…",
+      "done": "Terminée",
+      "interrupted": "Interrompue"
+    },
+    "detail": {
+      "back": "Toutes les réunions",
+      "rename": "Renommer",
+      "save": "Enregistrer",
+      "summary": "Résumé",
+      "transcript": "Transcription",
+      "summarize": "Résumer",
+      "resummarize": "Résumer à nouveau",
+      "summarizing": "Résumé en cours…",
+      "noSummary": "Pas encore de résumé. Les résumés utilisent le fournisseur d'IA choisi dans Post-traitement.",
+      "noLines": "Rien n'a été transcrit.",
+      "copy": "Copier en Markdown",
+      "copied": "Copié",
+      "saveMarkdown": "Enregistrer en Markdown…",
+      "saveSrt": "Enregistrer en sous-titres (SRT)…",
+      "delete": "Supprimer",
+      "deleteConfirm": "Supprimer cette réunion, sa transcription et son audio ? Action irréversible."
+    },
+    "speakers": {
+      "you": "Vous",
+      "others": "Autres"
+    },
+    "errors": {
+      "start": "Impossible de démarrer la réunion",
+      "stop": "Impossible d'arrêter la réunion",
+      "summary": "Impossible de résumer la réunion",
+      "export": "Impossible d'exporter la réunion",
+      "delete": "Impossible de supprimer la réunion",
+      "rename": "Impossible de renommer la réunion"
+    }
   }
 }

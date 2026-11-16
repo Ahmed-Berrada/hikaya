@@ -6,6 +6,7 @@ import {
   GraduationCap,
   History,
   Info,
+  Mic,
   Sparkles,
   Cpu,
   RefreshCw,
@@ -13,6 +14,7 @@ import {
 import HikayaTextLogo from "./hikaya/HikayaTextLogo";
 import { LearningSettings } from "./hikaya/LearningSettings";
 import { HubSettings } from "./hikaya/HubSettings";
+import { MeetingsSettings } from "./hikaya/MeetingsSettings";
 import HandyHand from "./icons/HandyHand";
 import { useSettings } from "../hooks/useSettings";
 import {
@@ -53,6 +55,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.history",
     icon: History,
     component: HistorySettings,
+    enabled: () => true,
+  },
+  meetings: {
+    labelKey: "hikaya.meetings.sidebar",
+    icon: Mic,
+    component: MeetingsSettings,
     enabled: () => true,
   },
   learning: {
