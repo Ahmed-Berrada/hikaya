@@ -9,6 +9,9 @@ Hikaya (حكاية, Darija for "a story, a telling") is a fork of [Handy](https:
 - **English, French and mixed EN/FR** as first-class languages.
 - **An optional self-hosted hub** that syncs your devices and adds phone capture.
 
+**Platforms:** Windows x64 is the main target. Linux builds are published too. There are no macOS
+builds. iPhone support is planned as a web app served by your own hub.
+
 > **Status:** early development. The app currently behaves like upstream Handy; see the
 > [roadmap](docs/hikaya/ROADMAP.md) and [architecture decisions](docs/adr/).
 
