@@ -11,13 +11,16 @@ publish = false
 anyhow = "1"
 log = "0.4"
 handy-recorder = "0.1.1"
-hikaya-core = { path = "../hikaya-core" }
 
 # The same cpal fork handy-recorder uses, so both see the same devices.
 [target.'cfg(target_os = "linux")'.dependencies.cpal]
 version = "=0.18.2"
 package = "handy-cpal"
 features = ["pulseaudio"]
+
+# Resampling for WASAPI loopback, which bypasses handy-recorder.
+[target.'cfg(windows)'.dependencies]
+hikaya-core = { path = "../hikaya-core" }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies.cpal]
 version = "=0.18.2"

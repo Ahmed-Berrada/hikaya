@@ -113,11 +113,12 @@ impl Resampler {
         );
         let mut sum = 0.0f64;
         let mut weight = 0.0f64;
-        for i in first..last {
-            let lo = (i as f64).max(start);
-            let hi = ((i + 1) as f64).min(end);
+        for (i, &sample) in self.pending[first..last].iter().enumerate() {
+            let position = (first + i) as f64;
+            let lo = position.max(start);
+            let hi = (position + 1.0).min(end);
             if hi > lo {
-                sum += f64::from(self.pending[i]) * (hi - lo);
+                sum += f64::from(sample) * (hi - lo);
                 weight += hi - lo;
             }
         }
