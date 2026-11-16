@@ -9,11 +9,13 @@ on:
     branches: [main]
     paths:
       - "crates/**"
+      - "hub/**"
       - "src/hikaya/**"
       - ".github/workflows/hikaya.yml"
   pull_request:
     paths:
       - "crates/**"
+      - "hub/**"
       - "src/hikaya/**"
       - ".github/workflows/hikaya.yml"
 
@@ -56,6 +58,34 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  hub:
+    name: hikaya-hub
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: hub
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # SQLCipher and OpenSSL are built from source; the cache keeps that to
+      # the first run.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "hub -> target"
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
   frontend:
     name: hikaya frontend
     runs-on: ubuntu-24.04
@@ -73,11 +103,15 @@ jobs:
   deny:
     name: licenses and advisories
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [crates/hikaya-core, hub]
     steps:
       - uses: actions/checkout@v5
 
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          manifest-path: crates/hikaya-core/Cargo.toml
+          manifest-path: ${{ matrix.crate }}/Cargo.toml
           command: check
           arguments: --config crates/hikaya-core/deny.toml
