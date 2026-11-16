@@ -40,6 +40,15 @@ Open Notepad and use the transcribe shortcut.
 - [ ] Accept it. Say the word again: it now comes out right.
 - [ ] Add a rule by hand, dictate the pattern, see the replacement. Switch the rule off, dictate again, see the original.
 
+## Sync with the hub (only if Tailscale is running on this machine)
+
+- [ ] Sync → address `https://<hub>.<tailnet>.ts.net`, a device name, the hub passphrase → Connect.
+      The status turns to "Up to date" and the existing history is sent.
+- [ ] Dictate something; within a few seconds "Nothing waiting to be sent" again.
+- [ ] Add a rule here; it appears on another connected device after its next sync.
+- [ ] Turn Wi-Fi off, dictate: "Hub unreachable" and a waiting count. Turn it back on: sent.
+- [ ] After the hub machine reboots: "Hub locked"; unlock from this screen.
+
 ## AI cleanup (only if Ollama is installed)
 
 - [ ] Settings → Post Processing: provider Custom (`http://localhost:11434/v1`), a model picked,
