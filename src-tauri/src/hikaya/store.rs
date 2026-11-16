@@ -17,8 +17,9 @@ use std::sync::RwLock;
 /// A correction must be seen this many times before it is proposed as a rule.
 pub const PROPOSAL_THRESHOLD: usize = 2;
 
-const MIGRATIONS: &[M] = &[M::up(
-    "CREATE TABLE rules (
+const MIGRATIONS: &[M] = &[
+    M::up(
+        "CREATE TABLE rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         pattern TEXT NOT NULL,
         replacement TEXT NOT NULL,
@@ -39,7 +40,31 @@ const MIGRATIONS: &[M] = &[M::up(
         replacement TEXT NOT NULL,
         PRIMARY KEY (pattern, replacement)
     );",
-)];
+    ),
+    // Sync (roadmap v0.3): stable ids, change times and tombstones so rules
+    // and corrections can be merged with the hub, plus the outgoing queue.
+    M::up(
+        "ALTER TABLE rules ADD COLUMN uid TEXT;
+    ALTER TABLE rules ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE rules ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE rules ADD COLUMN synced INTEGER NOT NULL DEFAULT 0;
+    UPDATE rules SET uid = lower(hex(randomblob(16))), updated_at = created_at * 1000;
+    CREATE UNIQUE INDEX rules_uid ON rules (uid);
+    ALTER TABLE substitutions ADD COLUMN uid TEXT;
+    ALTER TABLE substitutions ADD COLUMN synced INTEGER NOT NULL DEFAULT 0;
+    UPDATE substitutions SET uid = lower(hex(randomblob(16)));
+    CREATE UNIQUE INDEX substitutions_uid ON substitutions (uid);
+    CREATE TABLE sync_outbox (
+        uid TEXT PRIMARY KEY,
+        history_id INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        language TEXT
+    );
+    CREATE TABLE sync_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
+    ),
+];
 
 /// A replacement rule as stored and as shown in the UI.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -54,6 +79,8 @@ pub struct StoredRule {
     pub source: String,
     /// Unix time in seconds.
     pub created_at: i64,
+    /// Unix time in milliseconds of the last change.
+    pub updated_at: i64,
 }
 
 /// A rule suggested from the user's repeated corrections.
@@ -70,6 +97,11 @@ pub struct RuleProposal {
 pub struct LearnedSubstitution {
     pub from: String,
     pub to: String,
+}
+
+/// Current time in Unix milliseconds.
+pub(super) fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
 }
 
 pub struct LearningStore {
@@ -103,15 +135,23 @@ impl LearningStore {
         }
     }
 
-    fn conn(&self) -> Result<Connection> {
+    pub(super) fn conn(&self) -> Result<Connection> {
         Ok(Connection::open(&self.db_path)?)
     }
 
-    fn refresh_active(&self) -> Result<()> {
-        let rules = self
+    pub(super) fn refresh_active(&self) -> Result<()> {
+        // Two devices can each create a rule for the same words; the most
+        // recently changed one is the one applied.
+        let mut seen = std::collections::HashSet::new();
+        let mut enabled: Vec<StoredRule> = self
             .list_rules()?
             .into_iter()
             .filter(|rule| rule.enabled)
+            .collect();
+        enabled.sort_by_key(|rule| std::cmp::Reverse(rule.updated_at));
+        let rules = enabled
+            .into_iter()
+            .filter(|rule| seen.insert(rule.pattern.to_lowercase()))
             .map(|rule| Rule::new(&rule.pattern, &rule.replacement))
             .collect();
         match self.active.write() {
@@ -129,12 +169,12 @@ impl LearningStore {
         }
     }
 
-    /// Every rule, newest first.
+    /// Every rule except deleted ones, newest first.
     pub fn list_rules(&self) -> Result<Vec<StoredRule>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT id, pattern, replacement, enabled, source, created_at
-             FROM rules ORDER BY id DESC",
+            "SELECT id, pattern, replacement, enabled, source, created_at, updated_at
+             FROM rules WHERE deleted = 0 ORDER BY id DESC",
         )?;
         let rules = statement
             .query_map([], |row| {
@@ -145,6 +185,7 @@ impl LearningStore {
                     enabled: row.get(3)?,
                     source: row.get(4)?,
                     created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -163,26 +204,31 @@ impl LearningStore {
         anyhow::ensure!(!replacement.is_empty(), "a rule needs a replacement");
 
         let conn = self.conn()?;
+        // A deleted rule for the same words is brought back rather than
+        // duplicated, so its id (and its history on other devices) is kept.
         let existing: Option<i64> = conn
             .query_row(
-                "SELECT id FROM rules WHERE lower(pattern) = lower(?1)",
+                "SELECT id FROM rules WHERE lower(pattern) = lower(?1)
+                 ORDER BY deleted, updated_at DESC LIMIT 1",
                 params![pattern],
                 |row| row.get(0),
             )
             .ok();
+        let now = now_ms();
         let id = match existing {
             Some(id) => {
                 conn.execute(
-                    "UPDATE rules SET replacement = ?1, enabled = 1 WHERE id = ?2",
-                    params![replacement, id],
+                    "UPDATE rules SET replacement = ?1, enabled = 1, deleted = 0, updated_at = ?2, synced = 0
+                     WHERE id = ?3",
+                    params![replacement, now, id],
                 )?;
                 id
             }
             None => {
                 conn.execute(
-                    "INSERT INTO rules (pattern, replacement, source, created_at)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![pattern, replacement, source, chrono::Utc::now().timestamp()],
+                    "INSERT INTO rules (pattern, replacement, source, created_at, uid, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, lower(hex(randomblob(16))), ?5)",
+                    params![pattern, replacement, source, now / 1000, now],
                 )?;
                 conn.last_insert_rowid()
             }
@@ -198,16 +244,19 @@ impl LearningStore {
     /// Turns a rule on or off.
     pub fn set_rule_enabled(&self, id: i64, enabled: bool) -> Result<()> {
         self.conn()?.execute(
-            "UPDATE rules SET enabled = ?1 WHERE id = ?2",
-            params![enabled, id],
+            "UPDATE rules SET enabled = ?1, updated_at = ?2, synced = 0 WHERE id = ?3",
+            params![enabled, now_ms(), id],
         )?;
         self.refresh_active()
     }
 
-    /// Deletes a rule.
+    /// Deletes a rule. It is kept as a tombstone until the hub has seen the
+    /// deletion, so the rule also disappears from the user's other devices.
     pub fn delete_rule(&self, id: i64) -> Result<()> {
-        self.conn()?
-            .execute("DELETE FROM rules WHERE id = ?1", params![id])?;
+        self.conn()?.execute(
+            "UPDATE rules SET deleted = 1, updated_at = ?1, synced = 0 WHERE id = ?2",
+            params![now_ms(), id],
+        )?;
         self.refresh_active()
     }
 
@@ -225,8 +274,8 @@ impl LearningStore {
         let now = chrono::Utc::now().timestamp();
         for substitution in &found {
             tx.execute(
-                "INSERT INTO substitutions (history_id, from_text, to_text, created_at)
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO substitutions (history_id, from_text, to_text, created_at, uid)
+                 VALUES (?1, ?2, ?3, ?4, lower(hex(randomblob(16))))",
                 params![history_id, substitution.from, substitution.to, now],
             )?;
         }

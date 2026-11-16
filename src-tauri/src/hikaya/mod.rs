@@ -9,6 +9,7 @@ pub mod cleanup;
 pub mod commands;
 pub mod stage;
 pub mod store;
+pub mod sync;
 
 use std::sync::Arc;
 use store::LearningStore;
