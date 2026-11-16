@@ -91,6 +91,14 @@ impl MeetingManager {
         }
     }
 
+    pub(super) fn app(&self) -> &AppHandle {
+        &self.app
+    }
+
+    pub(super) fn store(&self) -> &LearningStore {
+        &self.store
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<Running>> {
         self.running.lock().unwrap_or_else(|p| p.into_inner())
     }
@@ -252,6 +260,11 @@ impl MeetingManager {
             log::info!("Meeting {id} finished ({} s)", length / 1000);
             if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
                 sync.trigger();
+            }
+            if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                if let Err(e) = meetings.prune_audio() {
+                    log::warn!("Could not remove old meeting audio: {e:#}");
+                }
             }
             MeetingManager::emit(&app, id);
         });

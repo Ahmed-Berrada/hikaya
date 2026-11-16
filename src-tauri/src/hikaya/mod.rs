@@ -46,9 +46,10 @@ pub fn init(app: &AppHandle) {
     });
     let store = Arc::new(store);
     app.manage(store.clone());
-    app.manage(Arc::new(meeting::manager::MeetingManager::new(
-        app,
-        store.clone(),
-    )));
+    let meetings = Arc::new(meeting::manager::MeetingManager::new(app, store.clone()));
+    if let Err(e) = meetings.prune_audio() {
+        log::warn!("Could not remove old meeting audio: {e:#}");
+    }
+    app.manage(meetings);
     sync_worker::start(app, store);
 }
