@@ -2,9 +2,10 @@
 //! so they are easy to tell apart from Handy's in the generated bindings.
 
 use super::store::{LearnedSubstitution, LearningStore, RuleProposal, StoredRule};
+use super::sync_worker::{self, SyncStatus, SyncWorker};
 use crate::managers::history::HistoryManager;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 type Store<'a> = State<'a, Arc<LearningStore>>;
 
@@ -77,6 +78,7 @@ pub fn hikaya_dismiss_proposal(
 #[tauri::command]
 #[specta::specta]
 pub async fn hikaya_correct_history_entry(
+    app: AppHandle,
     store: Store<'_>,
     history_manager: State<'_, Arc<HistoryManager>>,
     id: i64,
@@ -90,7 +92,56 @@ pub async fn hikaya_correct_history_entry(
         .hikaya_replace_entry_text(id, &corrected_text)
         .await
         .map_err(text_error)?;
-    store
+    let learned = store
         .record_correction(Some(id), &before, &corrected_text)
-        .map_err(text_error)
+        .map_err(text_error)?;
+    if let Ok(Some(entry)) = history_manager.get_entry_by_id(id).await {
+        sync_worker::on_dictation_corrected(&app, &entry, &corrected_text);
+    }
+    Ok(learned)
+}
+
+/// Where sync stands, for the Sync screen.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_hub_status(worker: State<'_, Arc<SyncWorker>>) -> SyncStatus {
+    worker.status()
+}
+
+/// Connects this device to a hub with the hub's passphrase. A new hub is set
+/// up with that passphrase; a locked one is unlocked.
+#[tauri::command]
+#[specta::specta]
+pub async fn hikaya_hub_connect(
+    app: AppHandle,
+    url: String,
+    device_name: String,
+    passphrase: String,
+) -> Result<SyncStatus, String> {
+    sync_worker::connect(&app, &url, &device_name, &passphrase).await
+}
+
+/// Unlocks the connected hub after it restarted.
+#[tauri::command]
+#[specta::specta]
+pub async fn hikaya_hub_unlock(app: AppHandle, passphrase: String) -> Result<SyncStatus, String> {
+    sync_worker::unlock(&app, &passphrase).await
+}
+
+/// Syncs now instead of waiting for the next run.
+#[tauri::command]
+#[specta::specta]
+pub async fn hikaya_hub_sync_now(worker: State<'_, Arc<SyncWorker>>) -> Result<SyncStatus, String> {
+    Ok(worker.inner().clone().run().await)
+}
+
+/// Disconnects from the hub. Data already on the hub stays there.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_hub_disconnect(
+    store: Store<'_>,
+    worker: State<'_, Arc<SyncWorker>>,
+) -> Result<SyncStatus, String> {
+    store.clear_hub_config().map_err(text_error)?;
+    Ok(worker.status())
 }

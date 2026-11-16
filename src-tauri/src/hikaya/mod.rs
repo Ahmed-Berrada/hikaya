@@ -10,6 +10,7 @@ pub mod commands;
 pub mod stage;
 pub mod store;
 pub mod sync;
+pub mod sync_worker;
 
 use std::sync::Arc;
 use store::LearningStore;
@@ -27,5 +28,7 @@ pub fn init(app: &AppHandle) {
         log::error!("Hikaya learning store unavailable: {err:#}");
         LearningStore::unavailable()
     });
-    app.manage(Arc::new(store));
+    let store = Arc::new(store);
+    app.manage(store.clone());
+    sync_worker::start(app, store);
 }
