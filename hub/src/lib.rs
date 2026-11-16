@@ -6,4 +6,5 @@ pub mod api;
 pub mod db;
 pub mod devices;
 pub mod state;
+pub mod sync;
 pub mod vault;

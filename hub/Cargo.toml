@@ -12,6 +12,7 @@ anyhow = "1"
 argon2 = "0.5"
 axum = "0.8"
 base64 = "0.22"
+hikaya-core = { path = "../crates/hikaya-core" }
 rand = "0.9"
 rusqlite = { version = "0.43", features = ["bundled-sqlcipher-vendored-openssl"] }
 serde = { version = "1", features = ["derive"] }
