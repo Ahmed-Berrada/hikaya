@@ -39,6 +39,9 @@ test.describe("Meetings screen", () => {
       page.getByText("Tell everyone the meeting is recorded."),
     ).toBeVisible();
     await expect(page.getByText("No meetings yet.")).toBeVisible();
+    await expect(
+      page.getByText(/Meeting audio follows Advanced/),
+    ).toBeVisible();
 
     await page.getByLabel("Meeting title (optional)").fill("Revue hebdo");
     await page.getByRole("button", { name: "Start recording" }).click();
