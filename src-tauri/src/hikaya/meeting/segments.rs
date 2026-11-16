@@ -9,8 +9,8 @@ use anyhow::{Context, Result};
 use hikaya_core::meeting::Speaker;
 use std::path::{Path, PathBuf};
 
-/// Sample rate of every segment.
-pub const SAMPLE_RATE: u32 = 16_000;
+/// Sample rate of every segment: what the capture delivers.
+pub const SAMPLE_RATE: u32 = hikaya_capture::SAMPLE_RATE;
 /// Length of a full segment.
 pub const SEGMENT_SECONDS: u32 = 30;
 const SEGMENT_SAMPLES: usize = (SAMPLE_RATE * SEGMENT_SECONDS) as usize;

@@ -1,0 +1,30 @@
+[package]
+name = "hikaya-capture"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Opens Hikaya's meeting tracks: the microphone and the system audio (PipeWire monitor on Linux, WASAPI loopback on Windows)."
+repository = "https://github.com/Ahmed-Berrada/hikaya"
+publish = false
+
+[dependencies]
+anyhow = "1"
+log = "0.4"
+handy-recorder = "0.1.1"
+hikaya-core = { path = "../hikaya-core" }
+
+# The same cpal fork handy-recorder uses, so both see the same devices.
+[target.'cfg(target_os = "linux")'.dependencies.cpal]
+version = "=0.18.2"
+package = "handy-cpal"
+features = ["pulseaudio"]
+
+[target.'cfg(not(target_os = "linux"))'.dependencies.cpal]
+version = "=0.18.2"
+package = "handy-cpal"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+unwrap_used = "warn"

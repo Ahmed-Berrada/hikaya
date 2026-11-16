@@ -60,6 +60,38 @@ jobs:
         env:
           RUSTDOCFLAGS: -D warnings
 
+  capture:
+    name: hikaya-capture (Linux and Windows)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crates/hikaya-capture
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/hikaya-capture -> target"
+
+      - name: System libraries (ALSA headers for cpal)
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Clippy (Linux)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # The WASAPI loopback path only compiles for Windows; checking it here
+      # catches type errors without a Windows machine.
+      - name: Clippy (Windows)
+        run: cargo clippy --locked --target x86_64-pc-windows-msvc -- -D warnings
+
   hub:
     name: hikaya-hub
     runs-on: ubuntu-24.04
@@ -162,7 +194,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [crates/hikaya-core, hub]
+        crate: [crates/hikaya-core, crates/hikaya-capture, hub]
     steps:
       - uses: actions/checkout@v5
 
