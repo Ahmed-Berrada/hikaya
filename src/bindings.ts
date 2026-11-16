@@ -1063,6 +1063,57 @@ async hikayaCorrectHistoryEntry(id: number, correctedText: string) : Promise<Res
 }
 },
 /**
+ * Where sync stands, for the Sync screen.
+ */
+async hikayaHubStatus() : Promise<SyncStatus> {
+    return await TAURI_INVOKE("hikaya_hub_status");
+},
+/**
+ * Connects this device to a hub with the hub's passphrase. A new hub is set
+ * up with that passphrase; a locked one is unlocked.
+ */
+async hikayaHubConnect(url: string, deviceName: string, passphrase: string) : Promise<Result<SyncStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_hub_connect", { url, deviceName, passphrase }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Unlocks the connected hub after it restarted.
+ */
+async hikayaHubUnlock(passphrase: string) : Promise<Result<SyncStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_hub_unlock", { passphrase }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Syncs now instead of waiting for the next run.
+ */
+async hikayaHubSyncNow() : Promise<Result<SyncStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_hub_sync_now") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Disconnects from the hub. Data already on the hub stays there.
+ */
+async hikayaHubDisconnect() : Promise<Result<SyncStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_hub_disconnect") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Queues the entry to be transcribed again with the current model. Its
  * progress and outcome arrive as `TranscriptionJob` events.
  */
@@ -1583,7 +1634,11 @@ source: string;
 /**
  * Unix time in seconds.
  */
-created_at: number }
+created_at: number; 
+/**
+ * Unix time in milliseconds of the last change.
+ */
+updated_at: number }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */
@@ -1616,6 +1671,58 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+/**
+ * What the last sync attempt found.
+ */
+export type SyncState = 
+/**
+ * No hub is connected.
+ */
+"not_connected" | 
+/**
+ * Connected; nothing has been tried yet since the app started.
+ */
+"waiting" | 
+/**
+ * A run is in progress.
+ */
+"syncing" | 
+/**
+ * The last run succeeded.
+ */
+"up_to_date" | 
+/**
+ * The hub could not be reached. Changes wait in the queue.
+ */
+"offline" | 
+/**
+ * The hub is locked until its passphrase is entered.
+ */
+"locked" | 
+/**
+ * The hub no longer accepts this device's token.
+ */
+"unauthorized" | 
+/**
+ * Something else failed; see `message`.
+ */
+"error"
+/**
+ * Everything the Sync screen shows.
+ */
+export type SyncStatus = { state: SyncState; url: string | null; device_name: string | null; 
+/**
+ * Detail for `error`, `offline` and refusals.
+ */
+message: string | null; 
+/**
+ * Dictations, rules and corrections waiting to be sent.
+ */
+pending: number; 
+/**
+ * Unix ms of the last successful sync.
+ */
+last_sync_at: number | null }
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.
