@@ -15,7 +15,54 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
         created_at INTEGER NOT NULL,
         last_seen_at INTEGER,
         revoked INTEGER NOT NULL DEFAULT 0
-    );"];
+    );",
+    // Synced data. `seq` orders rule changes for the pull feed.
+    "CREATE TABLE dictations (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        language TEXT,
+        duration_ms INTEGER,
+        received_at INTEGER NOT NULL
+    );
+    CREATE INDEX dictations_created_at ON dictations (created_at DESC);
+    CREATE VIRTUAL TABLE dictations_fts USING fts5(
+        text, content='dictations', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2'
+    );
+    CREATE TRIGGER dictations_ai AFTER INSERT ON dictations BEGIN
+        INSERT INTO dictations_fts (rowid, text) VALUES (new.rowid, new.text);
+    END;
+    CREATE TRIGGER dictations_ad AFTER DELETE ON dictations BEGIN
+        INSERT INTO dictations_fts (dictations_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+    END;
+    CREATE TRIGGER dictations_au AFTER UPDATE OF text ON dictations BEGIN
+        INSERT INTO dictations_fts (dictations_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+        INSERT INTO dictations_fts (rowid, text) VALUES (new.rowid, new.text);
+    END;
+    CREATE TABLE rules (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id),
+        pattern TEXT NOT NULL,
+        replacement TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        seq INTEGER NOT NULL
+    );
+    CREATE INDEX rules_seq ON rules (seq);
+    CREATE TABLE substitutions (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id),
+        from_text TEXT NOT NULL,
+        to_text TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE sync_counter (id INTEGER PRIMARY KEY CHECK (id = 1), seq INTEGER NOT NULL);
+    INSERT INTO sync_counter (id, seq) VALUES (1, 0);",
+];
 
 /// Brings the database to the current schema. Each migration and its version
 /// bump commit together, so a crash never leaves a half-applied step.

@@ -7,4 +7,5 @@ pub mod corrections;
 pub mod faithful;
 pub mod fillers;
 pub mod rules;
+pub mod sync;
 pub mod token;

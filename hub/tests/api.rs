@@ -338,3 +338,141 @@ async fn nothing_secret_is_readable_on_disk() {
         }
     }
 }
+
+#[tokio::test]
+async fn two_devices_sync_dictations_and_rules_through_the_hub() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, laptop) = hub.device("laptop").await;
+    let (_, phone) = hub.device("phone").await;
+
+    let (status, body) = hub
+        .call(
+            "POST",
+            "/api/sync/push",
+            Some(&laptop),
+            Some(json!({
+                "dictations": [{ "id": "d1", "created_at": 1000, "updated_at": 1000,
+                                 "text": "On se voit demain, and bring your laptop", "language": "fr" }],
+                "rules": [{ "id": "r1", "pattern": "get hub", "replacement": "GitHub",
+                            "enabled": true, "source": "learned", "updated_at": 1000 }],
+                "substitutions": [{ "id": "s1", "from": "get hub", "to": "GitHub", "created_at": 900 }]
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body,
+        json!({ "dictations": 1, "rules": 1, "substitutions": 1 })
+    );
+
+    // The phone receives the rule.
+    let (status, body) = hub
+        .call("GET", "/api/sync/pull?since=0", Some(&phone), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["rules"][0]["replacement"], "GitHub");
+    let cursor = body["cursor"].as_i64().expect("cursor");
+    let (_, body) = hub
+        .call(
+            "GET",
+            &format!("/api/sync/pull?since={cursor}"),
+            Some(&phone),
+            None,
+        )
+        .await;
+    assert_eq!(body["rules"], json!([]));
+
+    // The archive is searchable from any device, accents ignored.
+    let (status, body) = hub
+        .call("GET", "/api/dictations?q=demain", Some(&phone), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["device"], "laptop");
+    assert_eq!(body[0]["text"], "On se voit demain, and bring your laptop");
+}
+
+#[tokio::test]
+async fn sync_needs_a_token_and_waits_while_locked() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, laptop) = hub.device("laptop").await;
+    let push =
+        json!({ "dictations": [{ "id": "d1", "created_at": 1, "updated_at": 1, "text": "x" }] });
+
+    let (status, _) = hub
+        .call("POST", "/api/sync/push", None, Some(push.clone()))
+        .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let hub = hub.restarted();
+    let (status, body) = hub
+        .call("POST", "/api/sync/push", Some(&laptop), Some(push))
+        .await;
+    assert_eq!(status, StatusCode::LOCKED);
+    assert_eq!(body["error"], "locked");
+}
+
+#[tokio::test]
+async fn sync_rejects_bad_records_and_other_devices_ids() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, laptop) = hub.device("laptop").await;
+    let (_, phone) = hub.device("phone").await;
+
+    let (status, body) = hub
+        .call(
+            "POST",
+            "/api/sync/push",
+            Some(&laptop),
+            Some(json!({ "dictations": [{ "id": "../x", "created_at": 1, "updated_at": 1, "text": "x" }] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(body["error"], "invalid_record");
+
+    let mine =
+        json!({ "dictations": [{ "id": "d1", "created_at": 1, "updated_at": 1, "text": "mine" }] });
+    hub.call("POST", "/api/sync/push", Some(&laptop), Some(mine))
+        .await;
+    let theirs = json!({ "dictations": [{ "id": "d1", "created_at": 1, "updated_at": 9, "text": "theirs" }] });
+    let (status, body) = hub
+        .call("POST", "/api/sync/push", Some(&phone), Some(theirs))
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["error"], "not_yours");
+
+    let (status, _) = hub
+        .call(
+            "POST",
+            "/api/sync/push",
+            Some(&laptop),
+            Some(json!({ "dictations": "nope" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn dictations_are_unreadable_on_disk() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, laptop) = hub.device("laptop").await;
+    let secret = "rendez-vous confidentiel avec le client Berrada";
+    hub.call(
+        "POST",
+        "/api/sync/push",
+        Some(&laptop),
+        Some(json!({ "dictations": [{ "id": "d1", "created_at": 1, "updated_at": 1, "text": secret }] })),
+    )
+    .await;
+    for entry in std::fs::read_dir(hub.dir.path()).expect("read dir") {
+        let bytes = std::fs::read(entry.expect("entry").path()).expect("read");
+        for needle in ["confidentiel", "Berrada"] {
+            assert!(
+                !bytes.windows(needle.len()).any(|w| w == needle.as_bytes()),
+                "found {needle:?} in the clear"
+            );
+        }
+    }
+}

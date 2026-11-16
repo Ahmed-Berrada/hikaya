@@ -10,19 +10,24 @@
 //! | `GET  /api/devices`         | a device              | lists devices                        |
 //! | `DELETE /api/devices/{id}`  | passphrase            | revokes a device                     |
 //! | `GET  /api/me`              | a device              | the calling device                   |
+//! | `POST /api/sync/push`       | a device              | sends dictations, rules, corrections |
+//! | `GET  /api/sync/pull`       | a device              | rule changes since a cursor          |
+//! | `GET  /api/dictations`      | a device              | lists or searches the archive        |
 //!
 //! While the hub is locked, anything that needs data answers `423 Locked`,
 //! which tells a client to keep its changes queued and try again later.
 
 use crate::devices::{self, Device};
 use crate::state::{AppState, LockState, UnlockError};
+use crate::sync::{self, PushError};
 use crate::vault::VaultError;
-use axum::extract::{FromRequestParts, Path, State};
+use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
+use hikaya_core::sync::{PullResponse, PushRequest, PushResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -273,6 +278,87 @@ async fn me(AuthedDevice(device): AuthedDevice) -> Json<Device> {
     Json(device)
 }
 
+impl From<PushError> for ApiError {
+    fn from(error: PushError) -> Self {
+        match error {
+            PushError::TooLarge => Self::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "too_large",
+                error.to_string(),
+            ),
+            PushError::Invalid(..) => Self::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_record",
+                error.to_string(),
+            ),
+            PushError::NotYours(_) => {
+                Self::new(StatusCode::CONFLICT, "not_yours", error.to_string())
+            }
+            PushError::Other(error) => Self::internal(error),
+        }
+    }
+}
+
+fn data_connection(state: &AppState) -> Result<rusqlite::Connection, ApiError> {
+    state
+        .connection()
+        .map_err(ApiError::internal)?
+        .ok_or_else(ApiError::locked)
+}
+
+async fn sync_push(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Json(request): Json<PushRequest>,
+) -> Result<Json<PushResponse>, ApiError> {
+    let response = blocking(move || {
+        let mut conn = data_connection(&state)?;
+        Ok(sync::push(&mut conn, device.id, &request)?)
+    })
+    .await?;
+    Ok(Json(response))
+}
+
+#[derive(Deserialize)]
+struct PullQuery {
+    #[serde(default)]
+    since: i64,
+}
+
+async fn sync_pull(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Query(query): Query<PullQuery>,
+) -> Result<Json<PullResponse>, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(Json(
+        sync::pull(&conn, query.since).map_err(ApiError::internal)?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct DictationsQuery {
+    q: Option<String>,
+    before: Option<i64>,
+    limit: Option<usize>,
+}
+
+async fn list_dictations(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Query(query): Query<DictationsQuery>,
+) -> Result<Json<Vec<sync::DictationView>>, ApiError> {
+    let conn = data_connection(&state)?;
+    let found = sync::dictations(
+        &conn,
+        query.q.as_deref(),
+        query.before,
+        query.limit.unwrap_or(50),
+    )
+    .map_err(ApiError::internal)?;
+    Ok(Json(found))
+}
+
 /// Builds the router for a hub with the given state.
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -283,5 +369,11 @@ pub fn router(state: AppState) -> Router {
         .route("/api/devices", post(register_device).get(list_devices))
         .route("/api/devices/{id}", delete(revoke_device))
         .route("/api/me", get(me))
+        .route("/api/sync/push", post(sync_push))
+        .route("/api/sync/pull", get(sync_pull))
+        .route("/api/dictations", get(list_dictations))
+        // 500 records of up to 200 KB each would be 100 MB; real pushes are
+        // far smaller. 16 MB bounds memory use per request.
+        .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
         .with_state(state)
 }
