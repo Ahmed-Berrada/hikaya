@@ -63,7 +63,9 @@ def main():
     for case in cases:
         started = time.monotonic()
         try:
-            output = complete(args.base_url, args.model, template.replace("${output}", case["input"]), args.timeout)
+            vocabulary = ", ".join(case.get("vocabulary", [])) or "(none)"
+            prompt = template.replace("${vocabulary}", vocabulary).replace("${output}", case["input"])
+            output = complete(args.base_url, args.model, prompt, args.timeout)
             missing, leaked = check(case, output)
         except Exception as error:  # network or model failure counts as a failed case
             output, missing, leaked = f"<error: {error}>", ["(no answer)"], []
