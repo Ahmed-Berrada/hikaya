@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# End-to-end dictation test on Linux with PipeWire, no human needed.
+#
+# Plays a recorded sentence into a virtual microphone while the real app
+# records, then checks the text the app saved to its history. Along the way it
+# proves that capture, VAD, speech-to-text, Hikaya's filler/rule stage and
+# history all work together.
+#
+#   bun run tauri dev      # once, to build src-tauri/target/debug/handy
+#   scripts/hikaya/e2e-linux.sh
+#
+# Safety: the app runs with a throwaway data directory (XDG_DATA_HOME) and
+# with pasting switched off, so nothing is typed into the desktop and no real
+# history or settings are touched. The default microphone is switched to the
+# virtual one for the duration of the test and restored afterwards. Close any
+# running Hikaya first: the test talks to its own instance by app id.
+set -euo pipefail
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CACHE="${HIKAYA_E2E_CACHE:-$HOME/.cache/hikaya-e2e}"
+MODEL_FILE="whisper-base-Q8_0.gguf"
+MODEL_URL="https://huggingface.co/handy-computer/whisper-base-gguf/resolve/e0f69524f648720eca44c024d1d0dbb7027d1fa0/$MODEL_FILE"
+MODEL_SHA="81c069428bc8a24551a8169cf31cf09bcfd9d4cf50389ae281323c9aa9648c81"
+# John F. Kennedy's 1961 inaugural address, a US government work in the public domain.
+SAMPLE_URL="https://github.com/ggml-org/whisper.cpp/raw/v1.7.4/samples/jfk.wav"
+BIN="$REPO/src-tauri/target/debug/handy"
+
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
+
+say() { printf '== %s\n' "$*"; }
+die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+for tool in pw-cli pw-loopback pw-play wpctl curl python3 sha256sum; do
+  command -v "$tool" >/dev/null || die "missing tool: $tool"
+done
+
+mkdir -p "$CACHE"
+[[ -f "$CACHE/$MODEL_FILE" ]] || { say "downloading $MODEL_FILE (85 MB)"; curl -fL --retry 3 -o "$CACHE/$MODEL_FILE.part" "$MODEL_URL" && mv "$CACHE/$MODEL_FILE.part" "$CACHE/$MODEL_FILE"; }
+echo "$MODEL_SHA  $CACHE/$MODEL_FILE" | sha256sum -c --quiet || die "model checksum mismatch"
+[[ -f "$CACHE/jfk.wav" ]] || { say "downloading the speech sample"; curl -fL --retry 3 -o "$CACHE/jfk.wav" "$SAMPLE_URL"; }
+
+[[ -x "$BIN" ]] || die "build the debug app first: bun run tauri dev (then quit it)"
+pgrep -x handy >/dev/null && die "Hikaya is already running; quit it first"
+LIB_DIR="$(dirname "$(find "$REPO/src-tauri/target/debug/build" -name 'libtranscribe.so.*' -printf '%T@ %p\n' | sort -n | tail -1 | cut -d' ' -f2-)")"
+[[ -d "$LIB_DIR" ]] || die "libtranscribe not found under target/debug/build"
+
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/hikaya-e2e.XXXXXX")"
+DATA="$WORK/xdg/com.ahmedberrada.hikaya"
+mkdir -p "$DATA/models"
+ln -s "$CACHE/$MODEL_FILE" "$DATA/models/$MODEL_FILE"
+app() { XDG_DATA_HOME="$WORK/xdg" LD_LIBRARY_PATH="$LIB_DIR" "$BIN" "$@"; }
+
+node_id() { pw-cli ls Node 2>/dev/null | awk -v name="$1" '/^\tid /{id=$2; sub(",","",id)} index($0, "node.name = \"" name "\""){print id; exit}'; }
+previous_source="$(wpctl inspect @DEFAULT_AUDIO_SOURCE@ 2>/dev/null | sed -n 's/.*node.name = "\(.*\)"/\1/p' | head -1 || true)"
+APP_PID=""; MIC_PID=""
+cleanup() {
+  [[ -n "$APP_PID" ]] && kill "$APP_PID" 2>/dev/null || true
+  [[ -n "$MIC_PID" ]] && kill "$MIC_PID" 2>/dev/null || true
+  if [[ -n "$previous_source" ]]; then
+    id="$(node_id "$previous_source" || true)"
+    [[ -n "${id:-}" ]] && wpctl set-default "$id" 2>/dev/null || true
+  fi
+  if [[ -n "${HIKAYA_E2E_KEEP:-}" ]]; then say "kept $WORK"; else rm -rf "$WORK"; fi
+}
+trap cleanup EXIT
+
+say "creating a virtual microphone"
+# A loopback pair: what is played into the sink comes out of the source.
+pw-loopback \
+  --capture-props='media.class=Audio/Sink node.name=hikaya-e2e-sink node.description="Hikaya E2E input"' \
+  --playback-props='media.class=Audio/Source node.name=hikaya-e2e-mic node.description="Hikaya E2E microphone"' \
+  >/dev/null 2>&1 &
+MIC_PID=$!
+mic_id=""
+for _ in $(seq 1 20); do mic_id="$(node_id hikaya-e2e-mic || true)"; [[ -n "$mic_id" ]] && break; sleep 0.25; done
+[[ -n "$mic_id" ]] || die "the virtual microphone did not appear"
+wpctl set-default "$mic_id" || die "could not make the virtual microphone the default"
+
+say "first start, so the app writes its default settings"
+app --list-models >"$WORK/models.txt" 2>&1 || { tail -5 "$WORK/models.txt"; die "the app did not start"; }
+MODEL_ID="$(sed -n "s/^ *✓ *\([^ ]*$MODEL_FILE\) .*/\1/p" "$WORK/models.txt" | head -1)"
+[[ -n "$MODEL_ID" ]] || die "the app did not find $MODEL_FILE in its models folder"
+
+say "writing test settings and one replacement rule"
+python3 - "$DATA" "$MODEL_ID" <<'PY'
+import json, sqlite3, sys, time, pathlib
+data, model = pathlib.Path(sys.argv[1]), sys.argv[2]
+path = data / "settings_store.json"
+store = json.loads(path.read_text())
+store["settings"].update({
+    "onboarding_completed": True,
+    "paste_method": "none",          # never type into the desktop
+    "audio_feedback": False,
+    "spoken_languages": ["en", "fr"],
+    "selected_language": "en",
+    "selected_model": model,
+    "update_checks_enabled": False,
+})
+path.write_text(json.dumps(store))
+# Same schema as src-tauri/src/hikaya/store.rs, migration 1.
+db = sqlite3.connect(data / "hikaya.db")
+db.executescript("""
+CREATE TABLE rules (id INTEGER PRIMARY KEY AUTOINCREMENT, pattern TEXT NOT NULL, replacement TEXT NOT NULL,
+  app TEXT, enabled INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL DEFAULT 'manual', created_at INTEGER NOT NULL);
+CREATE TABLE substitutions (id INTEGER PRIMARY KEY AUTOINCREMENT, history_id INTEGER, from_text TEXT NOT NULL,
+  to_text TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE dismissed_proposals (pattern TEXT NOT NULL, replacement TEXT NOT NULL, PRIMARY KEY (pattern, replacement));
+PRAGMA user_version = 1;
+""")
+db.execute("INSERT INTO rules (pattern, replacement, created_at) VALUES (?, ?, ?)",
+           ("fellow americans", "fellow Canadians", int(time.time())))
+db.commit()
+PY
+
+say "starting the app"
+# Started directly, not through app(), so $! is the app and cleanup can stop it.
+XDG_DATA_HOME="$WORK/xdg" LD_LIBRARY_PATH="$LIB_DIR" "$BIN" --start-hidden --no-tray >"$WORK/app.log" 2>&1 &
+APP_PID=$!
+for _ in $(seq 1 120); do
+  grep -q "transcribe-cpp initialized" "$WORK/app.log" && break
+  kill -0 "$APP_PID" 2>/dev/null || { tail -20 "$WORK/app.log"; die "the app exited during startup"; }
+  sleep 0.5
+done
+sleep 3
+
+say "dictating the sample"
+app --toggle-transcription >/dev/null 2>&1
+sleep 1.5
+timeout 60 pw-play --target hikaya-e2e-sink "$CACHE/jfk.wav" || die "could not play the sample"
+sleep 1
+app --toggle-transcription >/dev/null 2>&1
+
+say "waiting for the transcription"
+text=""
+for _ in $(seq 1 120); do
+  text="$(python3 - "$DATA/history.db" <<'PY' 2>/dev/null || true
+import sqlite3, sys
+row = sqlite3.connect(sys.argv[1]).execute("SELECT transcription_text FROM transcription_history ORDER BY id DESC LIMIT 1").fetchone()
+print(row[0] if row else "")
+PY
+)"
+  [[ -n "$text" ]] && break
+  sleep 1
+done
+[[ -n "$text" ]] || { grep -iE "error|warn|silen|recording" "$WORK/app.log" | tail -8; die "no history entry after 120 s"; }
+echo "   heard: $text"
+
+lower="$(printf '%s' "$text" | tr '[:upper:]' '[:lower:]')"
+[[ "$lower" == *"ask not what your country can do for you"* ]] || die "the sentence was not transcribed"
+[[ "$text" == *"fellow Canadians"* ]] || die "the replacement rule was not applied"
+[[ "$lower" != *"fellow americans"* ]] || die "the original words are still there"
+say "PASS: capture, VAD, speech-to-text, rules and history all work"
