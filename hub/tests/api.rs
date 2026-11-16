@@ -371,7 +371,7 @@ async fn two_devices_sync_dictations_and_rules_through_the_hub() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body,
-        json!({ "dictations": 1, "rules": 1, "substitutions": 1 })
+        json!({ "dictations": 1, "rules": 1, "substitutions": 1, "meetings": 0 })
     );
 
     // The phone receives the rule.
@@ -535,4 +535,48 @@ async fn api_answers_are_never_cached() {
     assert_eq!(response.headers()["cache-control"], "no-store");
     assert!(hub.raw("/").await.headers().get("cache-control").is_none());
     assert_eq!(hub.raw("/nope").await.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn a_meeting_pushed_by_one_device_is_readable_from_another() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, laptop) = hub.device("laptop").await;
+    let (_, phone) = hub.device("phone").await;
+    let (status, body) = hub
+        .call(
+            "POST",
+            "/api/sync/push",
+            Some(&laptop),
+            Some(json!({ "meetings": [{
+                "id": "m1", "title": "Point produit", "started_at": 1000, "duration_ms": 60000,
+                "updated_at": 1000, "summary": "## TL;DR\nDémo jeudi.",
+                "lines": [{ "start_ms": 0, "end_ms": 30000, "speaker": "others", "text": "On décale la démo ?" }]
+            }] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["meetings"], 1);
+
+    let (status, body) = hub
+        .call("GET", "/api/meetings?q=demo", Some(&phone), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["title"], "Point produit");
+    assert_eq!(body[0]["device"], "laptop");
+    assert_eq!(body[0]["line_count"], 1);
+
+    let (status, body) = hub
+        .call("GET", "/api/meetings/m1", Some(&phone), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["summary"], "## TL;DR\nDémo jeudi.");
+    assert_eq!(body["lines"][0]["speaker"], "others");
+
+    let (status, _) = hub
+        .call("GET", "/api/meetings/nope", Some(&phone), None)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = hub.call("GET", "/api/meetings", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }

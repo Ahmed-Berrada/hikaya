@@ -12,7 +12,8 @@
 use super::store::{now_ms, LearningStore};
 use anyhow::{Context, Result};
 use hikaya_core::sync::{
-    DictationRecord, PullResponse, PushRequest, PushResponse, RuleRecord, SubstitutionRecord,
+    DictationRecord, MeetingLineRecord, MeetingRecord, PullResponse, PushRequest, PushResponse,
+    RuleRecord, SubstitutionRecord,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -22,6 +23,10 @@ use std::time::Duration;
 
 /// Dictations sent per push. Rules and corrections ride along.
 const DICTATIONS_PER_PUSH: usize = 200;
+/// Meetings sent per push: each carries its whole transcript.
+const MEETINGS_PER_PUSH: usize = 3;
+/// Meetings in these states are finished and can be sent.
+const FINISHED: &str = "('done', 'interrupted')";
 /// Safety stop for one sync run; the rest goes in the next run.
 const MAX_PUSHES_PER_RUN: usize = 20;
 /// How long a request may take before the hub counts as unreachable.
@@ -183,7 +188,8 @@ impl LearningStore {
         let count: i64 = conn.query_row(
             "SELECT (SELECT count(*) FROM sync_outbox)
                   + (SELECT count(*) FROM rules WHERE synced = 0)
-                  + (SELECT count(*) FROM substitutions WHERE synced = 0)",
+                  + (SELECT count(*) FROM substitutions WHERE synced = 0)
+                  + (SELECT count(*) FROM meetings WHERE synced = 0 AND status IN ('done', 'interrupted'))",
             [],
             |row| row.get(0),
         )?;
@@ -245,10 +251,49 @@ impl LearningStore {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let finished = conn
+            .prepare(&format!(
+                "SELECT id, uid, title, started_at, duration_ms, updated_at, summary FROM meetings
+                 WHERE synced = 0 AND status IN {FINISHED} ORDER BY started_at LIMIT ?1"
+            ))?
+            .query_map(params![MEETINGS_PER_PUSH as i64], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    MeetingRecord {
+                        id: row.get(1)?,
+                        title: row.get(2)?,
+                        started_at: row.get(3)?,
+                        duration_ms: row.get(4)?,
+                        updated_at: row.get(5)?,
+                        summary: row.get(6)?,
+                        lines: Vec::new(),
+                    },
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(conn);
+        let mut meetings = Vec::with_capacity(finished.len());
+        for (id, mut meeting) in finished {
+            meeting.lines = self
+                .meeting_lines(id)?
+                .into_iter()
+                .map(|l| MeetingLineRecord {
+                    start_ms: l.start_ms,
+                    end_ms: l.end_ms,
+                    speaker: match l.speaker {
+                        hikaya_core::meeting::Speaker::You => "you".into(),
+                        hikaya_core::meeting::Speaker::Others => "others".into(),
+                    },
+                    text: l.text,
+                })
+                .collect();
+            meetings.push(meeting);
+        }
         Ok(PushRequest {
             dictations,
             rules,
             substitutions,
+            meetings,
         })
     }
 
@@ -267,6 +312,12 @@ impl LearningStore {
             tx.execute(
                 "UPDATE rules SET synced = 1 WHERE uid = ?1 AND updated_at = ?2",
                 params![r.id, r.updated_at],
+            )?;
+        }
+        for m in &batch.meetings {
+            tx.execute(
+                "UPDATE meetings SET synced = 1 WHERE uid = ?1 AND updated_at = ?2",
+                params![m.id, m.updated_at],
             )?;
         }
         // Tombstones the hub has seen are no longer needed here.
@@ -358,7 +409,8 @@ pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncR
         store.mark_sent(&batch).map_err(other)?;
         report.sent_dictations += batch.dictations.len();
         report.sent_rules += batch.rules.len();
-        if batch.dictations.len() < DICTATIONS_PER_PUSH
+        if batch.meetings.len() < MEETINGS_PER_PUSH
+            && batch.dictations.len() < DICTATIONS_PER_PUSH
             && batch.rules.len() < 100
             && batch.substitutions.len() < 100
         {
@@ -540,6 +592,7 @@ mod tests {
     #[derive(Default)]
     struct FakeHub {
         dictations: Mutex<Vec<DictationRecord>>,
+        meetings: Mutex<Vec<MeetingRecord>>,
         rules: Mutex<Vec<(i64, RuleRecord)>>,
         error: Mutex<Option<HubError>>,
         pushes: Mutex<usize>,
@@ -580,6 +633,15 @@ mod tests {
                 }
             }
             drop(dictations);
+            let mut meetings = self.meetings.lock().expect("lock");
+            for m in &request.meetings {
+                match meetings.iter_mut().find(|x| x.id == m.id) {
+                    Some(x) if x.updated_at < m.updated_at => *x = m.clone(),
+                    Some(_) => {}
+                    None => meetings.push(m.clone()),
+                }
+            }
+            drop(meetings);
             for r in &request.rules {
                 let newer = self
                     .rules
@@ -815,6 +877,61 @@ mod tests {
             .query_row("SELECT count(*) FROM sync_outbox", [], |r| r.get(0))
             .expect("count");
         assert_eq!(queued, 0);
+    }
+
+    #[tokio::test]
+    async fn a_finished_meeting_is_sent_whole_and_again_when_it_changes() {
+        use crate::hikaya::meeting::store::MeetingStatus;
+        use hikaya_core::meeting::{Speaker, TranscriptLine};
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        let id = store
+            .create_meeting("Point produit", 1_000, true)
+            .expect("create");
+        for (start, speaker, text) in [
+            (0, Speaker::Others, "On décale ?"),
+            (30_000, Speaker::You, "Oui, jeudi."),
+        ] {
+            store
+                .add_meeting_line(
+                    id,
+                    &TranscriptLine {
+                        start_ms: start,
+                        end_ms: start + 30_000,
+                        speaker,
+                        text: text.into(),
+                    },
+                )
+                .expect("line");
+        }
+        // Still recording: not sent.
+        sync_once(&store, &hub).await.expect("sync");
+        assert!(hub.meetings.lock().expect("lock").is_empty());
+
+        store
+            .set_meeting_status(id, MeetingStatus::Done, 60_000)
+            .expect("done");
+        assert_eq!(store.pending_count().expect("pending"), 1);
+        sync_once(&store, &hub).await.expect("sync");
+        {
+            let sent = hub.meetings.lock().expect("lock");
+            assert_eq!(sent.len(), 1);
+            assert_eq!(sent[0].title, "Point produit");
+            assert_eq!(sent[0].lines.len(), 2);
+            assert_eq!(sent[0].lines[0].speaker, "others");
+        }
+        assert_eq!(store.pending_count().expect("pending"), 0);
+
+        std::thread::sleep(Duration::from_millis(2));
+        store
+            .set_meeting_summary(id, "## TL;DR\nDémo jeudi.", "test")
+            .expect("summary");
+        assert_eq!(store.pending_count().expect("pending"), 1);
+        sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(
+            hub.meetings.lock().expect("lock")[0].summary.as_deref(),
+            Some("## TL;DR\nDémo jeudi.")
+        );
     }
 
     #[test]

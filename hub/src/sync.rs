@@ -78,6 +78,10 @@ fn validate(request: &PushRequest) -> Result<(), PushError> {
             ));
         }
     }
+    for m in &request.meetings {
+        check_id(&m.id)?;
+        crate::meetings::validate(m)?;
+    }
     for s in &request.substitutions {
         check_id(&s.id)?;
         if s.from.len() > 200 || s.to.len() > 200 {
@@ -193,6 +197,9 @@ pub fn push(
             }
         }
     }
+    for m in &request.meetings {
+        response.meetings += usize::from(crate::meetings::apply(&tx, device, m)?);
+    }
     tx.commit().context("committing the push")?;
     Ok(response)
 }
@@ -229,6 +236,17 @@ pub fn pull(conn: &Connection, since: i64) -> Result<PullResponse> {
     Ok(PullResponse { rules, cursor })
 }
 
+/// Turns user input into an FTS5 query of quoted word prefixes, so the
+/// input can never use FTS syntax. Empty when there is no word.
+pub fn fts_words(query: &str) -> String {
+    query
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(|w| format!("\"{w}\"*"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// One dictation as listed or found by search.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct DictationView {
@@ -259,12 +277,7 @@ pub fn dictations(
             language: row.get(4)?,
         })
     };
-    let words: Vec<String> = query
-        .unwrap_or("")
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|w| !w.is_empty())
-        .map(|w| format!("\"{w}\"*"))
-        .collect();
+    let words = fts_words(query.unwrap_or(""));
     let rows = if words.is_empty() {
         conn.prepare(
             "SELECT d.id, v.name, d.created_at, d.text, d.language FROM dictations d
@@ -281,7 +294,7 @@ pub fn dictations(
              WHERE dictations_fts MATCH ?1 AND d.created_at < ?2
              ORDER BY d.created_at DESC LIMIT ?3",
         )?
-        .query_map(params![words.join(" "), before, limit], map)?
+        .query_map(params![words, before, limit], map)?
         .collect::<rusqlite::Result<Vec<_>>>()?
     };
     Ok(rows)

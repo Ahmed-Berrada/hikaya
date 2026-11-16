@@ -10,6 +10,9 @@
 #   bun run tauri dev      # once, to build src-tauri/target/debug/handy
 #   scripts/hikaya/e2e-meeting.sh
 #
+# With HIKAYA_E2E_HUB=1 it also starts a real hub, connects the app, and
+# checks the finished meeting arrives on the hub with its transcript.
+#
 # Uses a throwaway data directory; the default speaker and microphone are
 # switched to the virtual ones for the test and restored afterwards. Close
 # any running Hikaya first.
@@ -95,9 +98,44 @@ store["settings"].update({"onboarding_completed": True, "paste_method": "none", 
 path.write_text(json.dumps(store))
 PY
 
-XDG_DATA_HOME="$WORK/xdg" LD_LIBRARY_PATH="$LIB_DIR" "$BIN" --start-hidden --no-tray >"$WORK/app.log" 2>&1 &
-PIDS+=($!)
-for _ in $(seq 1 120); do grep -q "transcribe-cpp initialized" "$WORK/app.log" && break; sleep 0.5; done
+start_app() {
+  XDG_DATA_HOME="$WORK/xdg" LD_LIBRARY_PATH="$LIB_DIR" "$BIN" --start-hidden --no-tray >>"$WORK/app.log" 2>&1 &
+  APP_PID=$!
+  PIDS+=("$APP_PID")
+  for _ in $(seq 1 120); do grep -q "transcribe-cpp initialized" "$WORK/app.log" && return 0; sleep 0.5; done
+  die "the app did not start"
+}
+
+HUB_URL=""
+if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
+  say "starting a hub and connecting the app to it"
+  # A first start creates hikaya.db, where the hub connection is stored.
+  start_app
+  kill "$APP_PID"; wait "$APP_PID" 2>/dev/null || true
+  (cd "$REPO/hub" && cargo build --quiet) || die "the hub did not build"
+  HUB_URL="http://127.0.0.1:${HIKAYA_E2E_HUB_PORT:-18792}"
+  HIKAYA_HUB_DATA="$WORK/hub" HIKAYA_HUB_LISTEN="${HUB_URL#http://}" "$REPO/hub/target/debug/hikaya-hub" >"$WORK/hub.log" 2>&1 &
+  PIDS+=($!)
+  for _ in $(seq 1 40); do curl -fs "$HUB_URL/api/status" >/dev/null && break; sleep 0.25; done
+  PASS="e2e passphrase $(date +%s)"
+  curl -fs -X POST "$HUB_URL/api/init" -H 'content-type: application/json' -d "{\"passphrase\":\"$PASS\"}" >/dev/null || die "hub init failed"
+  token() {
+    curl -fs -X POST "$HUB_URL/api/devices" -H 'content-type: application/json' \
+      -d "{\"passphrase\":\"$PASS\",\"name\":\"$1\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])'
+  }
+  APP_TOKEN="$(token e2e-laptop)"
+  READER="$(token e2e-phone)"
+  python3 - "$DATA/hikaya.db" "$HUB_URL" "$APP_TOKEN" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+for key, value in (("hub_url", sys.argv[2]), ("hub_token", sys.argv[3]), ("device_name", "e2e-laptop")):
+    db.execute("INSERT INTO sync_settings (key, value) VALUES (?, ?)", (key, value))
+db.commit()
+PY
+  : >"$WORK/app.log"
+fi
+
+start_app
 sleep 3
 
 say "recording a meeting: the others speak first, then you, 30 s later"
@@ -137,3 +175,17 @@ echo "$lower" | grep -q "^30000 you .*ask not what your country" || die "your sp
 ls "$WORK/xdg/com.ahmedberrada.hikaya/meetings/"*/others-00000.wav "$WORK/xdg/com.ahmedberrada.hikaya/meetings/"*/you-00001.wav >/dev/null \
   || die "the audio segments were not saved"
 say "PASS: both tracks were recorded, saved and transcribed under the right speaker"
+
+if [[ -n "$HUB_URL" ]]; then
+  say "waiting for the meeting to reach the hub"
+  found=""
+  for _ in $(seq 1 60); do
+    found="$(curl -fs "$HUB_URL/api/meetings?q=country" -H "authorization: Bearer $READER" \
+      | python3 -c 'import sys,json;d=json.load(sys.stdin);print("%s from %s, %s lines" % (d[0]["title"], d[0]["device"], d[0]["line_count"]) if d else "")')"
+    [[ -n "$found" ]] && break
+    sleep 1
+  done
+  [[ -n "$found" ]] || { grep -i "hub" "$WORK/app.log" | tail -5; die "the meeting never reached the hub"; }
+  echo "   hub has: $found"
+  say "PASS: the finished meeting was synced to the hub"
+fi

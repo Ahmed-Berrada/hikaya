@@ -65,6 +65,43 @@ pub struct SubstitutionRecord {
     pub created_at: i64,
 }
 
+/// One line of a meeting transcript, as synced.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeetingLineRecord {
+    /// Start, in milliseconds from the start of the meeting.
+    pub start_ms: i64,
+    /// End, in milliseconds from the start of the meeting.
+    pub end_ms: i64,
+    /// `you` or `others`.
+    pub speaker: String,
+    /// What was said.
+    pub text: String,
+}
+
+/// A finished meeting with its whole transcript. Pushing it again with a
+/// newer `updated_at` (a rename, a new summary) replaces it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MeetingRecord {
+    /// Chosen by the device that recorded it.
+    pub id: String,
+    /// The meeting's title.
+    pub title: String,
+    /// When it started, Unix ms.
+    pub started_at: i64,
+    /// Length of the recording.
+    pub duration_ms: i64,
+    /// When it last changed. The newest version wins.
+    pub updated_at: i64,
+    /// The summary as Markdown, if one was made.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The transcript, in order.
+    pub lines: Vec<MeetingLineRecord>,
+}
+
+/// Most transcript lines one meeting may carry (about 20 hours of meeting).
+pub const MAX_MEETING_LINES: usize = 5_000;
+
 /// Body of `POST /api/sync/push`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PushRequest {
@@ -77,12 +114,15 @@ pub struct PushRequest {
     /// Word replacements from the user's corrections.
     #[serde(default)]
     pub substitutions: Vec<SubstitutionRecord>,
+    /// Finished meetings, new or changed.
+    #[serde(default)]
+    pub meetings: Vec<MeetingRecord>,
 }
 
 impl PushRequest {
     /// Total number of records in the push.
     pub fn len(&self) -> usize {
-        self.dictations.len() + self.rules.len() + self.substitutions.len()
+        self.dictations.len() + self.rules.len() + self.substitutions.len() + self.meetings.len()
     }
 
     /// True when there is nothing to send.
@@ -100,6 +140,9 @@ pub struct PushResponse {
     pub rules: usize,
     /// Substitutions added.
     pub substitutions: usize,
+    /// Meetings added or updated.
+    #[serde(default)]
+    pub meetings: usize,
 }
 
 /// Answer to `GET /api/sync/pull?since=<cursor>`.

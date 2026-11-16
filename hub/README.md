@@ -52,6 +52,8 @@ The device token is shown once. Only its SHA-256 is stored.
 | `POST /api/sync/push`       | a device              | sends dictations, rules, corrections |
 | `GET /api/sync/pull?since=` | a device              | rule changes since a cursor          |
 | `GET /api/dictations?q=`    | a device              | lists or searches the archive        |
+| `GET /api/meetings?q=`      | a device              | lists or searches meetings           |
+| `GET /api/meetings/{id}`    | a device              | one meeting with its transcript      |
 
 ### Sync rules
 
@@ -95,7 +97,7 @@ After the machine reboots, the hub is locked. Unlock it from **Sync** in the app
 
 Open the hub's address in a browser on your tailnet, for example on your iPhone:
 `https://<machine>.<tailnet>.ts.net`. Pair the browser once with the passphrase. You can then
-search every dictation, and unlock the hub after a reboot without the desktop app. In Safari, **Share
+search every dictation, read meetings with their summaries, and unlock the hub after a reboot without the desktop app. In Safari, **Share
 → Add to Home Screen** makes it open like an app.
 
 The browser keeps only its device token; revoke it like any other device. The page loads no

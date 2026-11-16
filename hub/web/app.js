@@ -29,6 +29,15 @@ const STRINGS = {
     devicePrefix: "Paired as",
     revoked: "This browser is no longer allowed on the hub. Pair it again.",
     defaultName: "Browser",
+    dictations: "Dictations",
+    meetings: "Meetings",
+    searchMeetings: "Search your meetings",
+    noMeetings: "No meetings yet.",
+    back: "← All meetings",
+    transcript: "Transcript",
+    you: "You",
+    others: "Others",
+    lines: "lines",
   },
   fr: {
     pairTitle: "Ouvrir vos archives",
@@ -55,6 +64,15 @@ const STRINGS = {
     revoked:
       "Ce navigateur n'est plus autorisé sur le hub. Associez-le de nouveau.",
     defaultName: "Navigateur",
+    dictations: "Dictées",
+    meetings: "Réunions",
+    searchMeetings: "Rechercher dans vos réunions",
+    noMeetings: "Aucune réunion pour l'instant.",
+    back: "← Toutes les réunions",
+    transcript: "Transcription",
+    you: "Vous",
+    others: "Autres",
+    lines: "lignes",
   },
 };
 
@@ -93,6 +111,7 @@ const store = {
 let memoryToken = store.get();
 let oldest = null; // created_at of the last shown dictation, for paging
 let query = "";
+let tab = "dictations"; // or "meetings"
 
 class HubError extends Error {
   constructor(status, code, message) {
@@ -190,12 +209,145 @@ function render(dictations, append) {
   $("empty").textContent = query ? t("noMatch") : t("empty");
 }
 
+const clock = (ms) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
+  const sec = String(total % 60).padStart(2, "0");
+  return h ? `${h}:${m}:${sec}` : `${m}:${sec}`;
+};
+
+function renderMeetings(meetings, append) {
+  const list = $("results");
+  if (!append) list.replaceChildren();
+  const format = new Intl.DateTimeFormat(lang, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  for (const m of meetings) {
+    const item = document.createElement("li");
+    item.className = "clickable";
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
+    const title = document.createElement("div");
+    title.className = "title";
+    highlighted(title, m.title);
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = `${format.format(new Date(m.started_at))} · ${clock(m.duration_ms)} · ${m.device} · ${m.line_count} ${t("lines")}`;
+    item.append(title, meta);
+    const open = () => void openMeeting(m.id);
+    item.addEventListener("click", open);
+    item.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") open();
+    });
+    list.append(item);
+  }
+  if (meetings.length) oldest = meetings[meetings.length - 1].started_at;
+  $("more").hidden = meetings.length < PAGE;
+  const nothing = !append && meetings.length === 0;
+  $("empty").hidden = !nothing;
+  $("empty").textContent = query ? t("noMatch") : t("noMeetings");
+}
+
+/** Shows Markdown from the summary as safe elements: headings, bullets, text. */
+function renderSummary(parent, markdown) {
+  parent.replaceChildren();
+  let list = null;
+  for (const raw of markdown.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      list = null;
+      continue;
+    }
+    const heading = line.match(/^#{1,6}\s+(.*)$/);
+    const bullet = line.match(/^[-*]\s+(?:\[[ xX]\]\s+)?(.*)$/);
+    if (heading) {
+      list = null;
+      const h = document.createElement("h4");
+      h.textContent = heading[1];
+      parent.append(h);
+    } else if (bullet) {
+      if (!list) {
+        list = document.createElement("ul");
+        parent.append(list);
+      }
+      const li = document.createElement("li");
+      li.textContent = bullet[1];
+      list.append(li);
+    } else {
+      list = null;
+      const p = document.createElement("p");
+      p.textContent = line;
+      parent.append(p);
+    }
+  }
+}
+
+async function openMeeting(id) {
+  try {
+    const m = await api(`/api/meetings/${encodeURIComponent(id)}`);
+    const format = new Intl.DateTimeFormat(lang, {
+      dateStyle: "full",
+      timeStyle: "short",
+    });
+    $("meeting-title").textContent = m.title;
+    $("meeting-meta").textContent =
+      `${format.format(new Date(m.started_at))} · ${clock(m.duration_ms)} · ${m.device}`;
+    $("meeting-summary").hidden = !m.summary;
+    if (m.summary) renderSummary($("meeting-summary"), m.summary);
+    const lines = $("meeting-lines");
+    lines.replaceChildren();
+    for (const l of m.lines) {
+      const li = document.createElement("li");
+      const time = document.createElement("span");
+      time.className = "time";
+      time.textContent = clock(l.start_ms);
+      const who = document.createElement("span");
+      who.className = `speaker ${l.speaker === "you" ? "you" : ""}`;
+      who.textContent = `${t(l.speaker === "you" ? "you" : "others")}:`;
+      li.append(time, who, document.createTextNode(l.text));
+      lines.append(li);
+    }
+    showMeeting(true);
+    showError(null);
+  } catch (error) {
+    await handle(error);
+  }
+}
+
+function showMeeting(on) {
+  $("meeting").hidden = !on;
+  for (const id of ["results", "search", "more", "empty"]) {
+    if (on) $(id).hidden = true;
+  }
+  if (!on) $("search").hidden = false;
+  window.scrollTo(0, 0);
+}
+
+function selectTab(name) {
+  tab = name;
+  for (const which of ["dictations", "meetings"]) {
+    $(`tab-${which}`).setAttribute("aria-selected", String(which === name));
+  }
+  $("q").placeholder = t(name === "meetings" ? "searchMeetings" : "search");
+  $("q").setAttribute("aria-label", $("q").placeholder);
+  showMeeting(false);
+  oldest = null;
+  void load(false);
+}
+
 async function load(append = false) {
   const params = new URLSearchParams({ limit: String(PAGE) });
   if (query) params.set("q", query);
   if (append && oldest !== null) params.set("before", String(oldest));
   try {
-    render(await api(`/api/dictations?${params}`), append);
+    if (tab === "meetings") {
+      renderMeetings(await api(`/api/meetings?${params}`), append);
+    } else {
+      render(await api(`/api/dictations?${params}`), append);
+    }
+    $("results").hidden = false;
     showError(null);
   } catch (error) {
     await handle(error);
@@ -297,6 +449,12 @@ $("q").addEventListener("input", () => {
 });
 $("search").addEventListener("submit", (event) => event.preventDefault());
 $("more").addEventListener("click", () => void load(true));
+$("tab-dictations").addEventListener("click", () => selectTab("dictations"));
+$("tab-meetings").addEventListener("click", () => selectTab("meetings"));
+$("back").addEventListener("click", () => {
+  showMeeting(false);
+  void load(false);
+});
 $("forget").addEventListener("click", () => {
   memoryToken = null;
   store.clear();
