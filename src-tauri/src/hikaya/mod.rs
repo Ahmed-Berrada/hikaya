@@ -13,8 +13,17 @@ pub mod store;
 pub mod sync;
 pub mod sync_worker;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use store::LearningStore;
+
+/// The learning store, for code paths that only receive settings (such as
+/// post-processing). Set once at startup.
+static LEARNING_STORE: OnceLock<Arc<LearningStore>> = OnceLock::new();
+
+/// The learning store, once the app has started.
+pub fn learning_store() -> Option<&'static Arc<LearningStore>> {
+    LEARNING_STORE.get()
+}
 use tauri::{AppHandle, Manager};
 
 /// Starts or stops a meeting, as `--toggle-meeting` asks.
@@ -45,6 +54,7 @@ pub fn init(app: &AppHandle) {
         LearningStore::unavailable()
     });
     let store = Arc::new(store);
+    let _ = LEARNING_STORE.set(store.clone());
     app.manage(store.clone());
     let meetings = Arc::new(meeting::manager::MeetingManager::new(app, store.clone()));
     if let Err(e) = meetings.prune_audio() {

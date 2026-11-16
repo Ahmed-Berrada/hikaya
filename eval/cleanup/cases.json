@@ -82,5 +82,26 @@
     "input": "le budget c'est vingt-cinq mille euros, so about twenty seven thousand dollars",
     "keep": ["le budget", "euros", "so about", "dollars"],
     "drop": ["the budget", "donc environ"]
+  },
+  {
+    "id": "vocab-product-names",
+    "input": "on pousse le fix sur git hub et on prévient clod code",
+    "vocabulary": ["GitHub", "Claude Code"],
+    "keep": ["GitHub", "Claude Code", "on pousse le fix"],
+    "drop": ["git hub", "clod", "we push"]
+  },
+  {
+    "id": "vocab-person-name",
+    "input": "send the notes to a med and to sarah before noon",
+    "vocabulary": ["Ahmed", "Sarah"],
+    "keep": ["Ahmed", "Sarah", "before noon"],
+    "drop": ["a med", "envoie"]
+  },
+  {
+    "id": "vocab-not-forced",
+    "input": "the weather is nice today",
+    "vocabulary": ["GitHub", "Ahmed"],
+    "keep": ["weather is nice today"],
+    "drop": ["GitHub", "Ahmed"]
   }
 ]

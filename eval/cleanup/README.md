@@ -24,11 +24,19 @@ So a `FAIL` here means "the model got it wrong", not "the user got wrong text".
 
 Measured on 2026-11-16 with `qwen3:4b-instruct` (Q4, CPU, Ollama 0.40.16), temperature 0.
 
-| Prompt                                             | Passed |
-| -------------------------------------------------- | ------ |
-| Hikaya (`src-tauri/src/hikaya/cleanup_prompt.txt`) | 7 / 12 |
-| Handy's default prompt                             | 6 / 12 |
-| A shorter "copy the transcript" variant            | 6 / 12 |
+| Prompt                                            | Original 12 | Vocabulary 3 |
+| ------------------------------------------------- | ----------- | ------------ |
+| Hikaya, with the vocabulary as a separate section | 7 / 12      | 2 / 3        |
+| Hikaya, with the vocabulary as a numbered rule    | 6 / 12      | 2 / 3        |
+| Hikaya, before the vocabulary                     | 7 / 12      | not run      |
+| Handy's default prompt                            | 6 / 12      | not run      |
+| A shorter "copy the transcript" variant           | 6 / 12      | not run      |
+
+The vocabulary (custom words plus rule replacements) fixes spellings such as "git hub" →
+"GitHub" and "clod code" → "Claude Code" without forcing them into unrelated sentences. As a
+numbered rule it made the model drop words from a plain English sentence, so it is a separate
+section. Names the model still misses ("a med" → "Ahmed") are what replacement rules are for;
+those run before the model.
 
 A 4B model translates one half of a mixed sentence about half the time, whatever the wording.
 Every translated or rewritten output from these runs is in the unit tests of

@@ -104,6 +104,32 @@ pub fn apply_rules(text: &str, rules: &[Rule], app: Option<&str>) -> String {
     join(&out)
 }
 
+/// Most words handed to a language model as the speaker's vocabulary.
+pub const MAX_VOCABULARY: usize = 60;
+
+/// The words the speaker cares about, for a language model to spell right:
+/// their custom words, then the replacements of their enabled rules. Case
+/// duplicates are dropped (the first spelling wins) and the list is capped
+/// at [`MAX_VOCABULARY`].
+pub fn vocabulary(custom_words: &[String], rules: &[Rule]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    custom_words
+        .iter()
+        .map(String::as_str)
+        .chain(
+            rules
+                .iter()
+                .filter(|r| r.enabled)
+                .map(|r| r.replacement.as_str()),
+        )
+        .map(str::trim)
+        .filter(|w| w.chars().any(char::is_alphanumeric))
+        .filter(|w| seen.insert(w.to_lowercase()))
+        .take(MAX_VOCABULARY)
+        .map(str::to_string)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +215,26 @@ mod tests {
             apply_rules("L'ecole ferme aujourd'hui. Ecole!", &rules, None),
             "L'ecole ferme aujourd’hui. École!"
         );
+    }
+
+    #[test]
+    fn vocabulary_merges_custom_words_and_rule_replacements() {
+        let mut off = Rule::new("x", "Disabled");
+        off.enabled = false;
+        let rules = [
+            Rule::new("get hub", "GitHub"),
+            Rule::new("clod", "claude"),
+            off,
+            Rule::new("a", " ... "),
+        ];
+        let words = vocabulary(&["Claude".to_string(), " Hikaya ".to_string()], &rules);
+        assert_eq!(words, ["Claude", "Hikaya", "GitHub"]);
+    }
+
+    #[test]
+    fn vocabulary_is_capped() {
+        let many: Vec<String> = (0..100).map(|i| format!("word{i}")).collect();
+        assert_eq!(vocabulary(&many, &[]).len(), MAX_VOCABULARY);
     }
 
     #[test]
