@@ -114,4 +114,4 @@ jobs:
         with:
           manifest-path: ${{ matrix.crate }}/Cargo.toml
           command: check
-          arguments: --config crates/hikaya-core/deny.toml
+          arguments: --config ${{ matrix.crate }}/deny.toml

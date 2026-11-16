@@ -1,35 +1,74 @@
 //! Schema of the encrypted hub database.
+//!
+//! Migrations are plain SQL run in order. The number of migrations already
+//! applied is kept in SQLite's `user_version`.
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use rusqlite_migration::{Migrations, M};
 
-const MIGRATIONS: &[M] = &[M::up(
-    "CREATE TABLE devices (
+/// One entry per schema change, oldest first. Never edit or reorder an entry
+/// that has shipped: add a new one.
+const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         token_sha256 TEXT NOT NULL UNIQUE,
         created_at INTEGER NOT NULL,
         last_seen_at INTEGER,
         revoked INTEGER NOT NULL DEFAULT 0
-    );",
-)];
+    );"];
 
-/// Brings the database to the current schema.
+/// Brings the database to the current schema. Each migration and its version
+/// bump commit together, so a crash never leaves a half-applied step.
 pub fn migrate(conn: &mut Connection) -> Result<()> {
-    Migrations::new(MIGRATIONS.to_vec())
-        .to_latest(conn)
-        .context("migrating the hub database")
+    let applied: usize = conn
+        .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+        .context("reading the schema version")?
+        .try_into()
+        .context("the schema version is negative")?;
+    anyhow::ensure!(
+        applied <= MIGRATIONS.len(),
+        "the database is at schema {applied}, newer than this hub ({}); upgrade the hub",
+        MIGRATIONS.len()
+    );
+    for (index, sql) in MIGRATIONS.iter().enumerate().skip(applied) {
+        let tx = conn.transaction()?;
+        tx.execute_batch(sql)
+            .with_context(|| format!("applying migration {}", index + 1))?;
+        tx.pragma_update(None, "user_version", (index + 1) as i64)?;
+        tx.commit()?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn version(conn: &Connection) -> i64 {
+        conn.pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("user_version")
+    }
+
     #[test]
-    fn migrations_are_valid() {
-        Migrations::new(MIGRATIONS.to_vec())
-            .validate()
-            .expect("valid migrations");
+    fn migrates_a_new_database_and_is_idempotent() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        migrate(&mut conn).expect("first run");
+        assert_eq!(version(&conn), MIGRATIONS.len() as i64);
+        migrate(&mut conn).expect("second run changes nothing");
+        assert_eq!(version(&conn), MIGRATIONS.len() as i64);
+        conn.execute(
+            "INSERT INTO devices (name, token_sha256, created_at) VALUES ('a', 'b', 0)",
+            [],
+        )
+        .expect("the devices table exists");
+    }
+
+    #[test]
+    fn refuses_a_database_from_a_newer_hub() {
+        let mut conn = Connection::open_in_memory().expect("open");
+        conn.pragma_update(None, "user_version", MIGRATIONS.len() as i64 + 1)
+            .expect("set version");
+        let error = migrate(&mut conn).expect_err("must refuse");
+        assert!(error.to_string().contains("upgrade the hub"));
     }
 }
