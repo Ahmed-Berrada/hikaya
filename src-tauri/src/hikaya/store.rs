@@ -89,6 +89,15 @@ const MIGRATIONS: &[M] = &[
     );
     CREATE INDEX meeting_lines_meeting ON meeting_lines (meeting_id, start_ms);",
     ),
+    // Usage counters for the stats panel. Kept apart from Handy's history,
+    // which is pruned.
+    M::up(
+        "CREATE TABLE daily_stats (
+        day TEXT PRIMARY KEY,
+        dictations INTEGER NOT NULL DEFAULT 0,
+        words INTEGER NOT NULL DEFAULT 0
+    );",
+    ),
 ];
 
 /// A replacement rule as stored and as shown in the UI.

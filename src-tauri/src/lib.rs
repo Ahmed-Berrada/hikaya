@@ -828,6 +828,7 @@ pub fn run(cli_args: CliArgs) {
             hikaya::commands::hikaya_hub_unlock,
             hikaya::commands::hikaya_hub_sync_now,
             hikaya::commands::hikaya_hub_disconnect,
+            hikaya::commands::hikaya_stats,
             hikaya::meeting::commands::hikaya_meeting_start,
             hikaya::meeting::commands::hikaya_meeting_stop,
             hikaya::meeting::commands::hikaya_meeting_active,
