@@ -8,6 +8,32 @@ const openLearning = async (page: import("@playwright/test").Page) => {
 };
 
 test.describe("Learning screen", () => {
+  test("shows dictation stats and what is corrected most", async ({ page }) => {
+    await mockTauri(page);
+    await page.addInitScript(() => {
+      (window as any).__HIKAYA_MOCK__.handlers.hikaya_stats = () => ({
+        words_today: 312,
+        words_week: 4821,
+        words_total: 18250,
+        dictations_total: 640,
+        minutes_saved: 335,
+        rules: 0,
+        learned_rules: 0,
+        top_corrections: [
+          { from: "get hub", to: "GitHub", count: 7 },
+          { from: "a med", to: "Ahmed", count: 3 },
+        ],
+      });
+    });
+    await openLearning(page);
+    await expect(page.getByText("Your dictation")).toBeVisible();
+    await expect(page.getByText("18,250")).toBeVisible();
+    await expect(page.getByText("about 335 min")).toBeVisible();
+    await expect(page.getByText("640 dictations")).toBeVisible();
+    await expect(page.getByText("What you correct most")).toBeVisible();
+    await expect(page.getByText("×7")).toBeVisible();
+  });
+
   test("the app is named Hikaya and offers the Learning section", async ({
     page,
   }) => {

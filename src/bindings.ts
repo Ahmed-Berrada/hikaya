@@ -1113,6 +1113,17 @@ async hikayaHubDisconnect() : Promise<Result<SyncStatus, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Usage numbers for the Learning screen.
+ */
+async hikayaStats() : Promise<Result<Stats, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_stats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async hikayaMeetingStart(title: string) : Promise<Result<ActiveMeeting, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_start", { title }) };
@@ -1438,6 +1449,10 @@ export type ChineseScript =
  */
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+/**
+ * One correction and how often the user made it.
+ */
+export type CorrectionCount = { from: string; to: string; count: number }
 export type CustomSounds = { start: boolean; stop: boolean }
 /**
  * File formats a meeting can be exported to.
@@ -1771,6 +1786,14 @@ export type ShortcutActivation =
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * Everything the stats panel shows.
+ */
+export type Stats = { words_today: number; words_week: number; words_total: number; dictations_total: number; 
+/**
+ * Estimated minutes saved compared with typing, since counting began.
+ */
+minutes_saved: number; rules: number; learned_rules: number; top_corrections: CorrectionCount[] }
 /**
  * A replacement rule as stored and as shown in the UI.
  */
