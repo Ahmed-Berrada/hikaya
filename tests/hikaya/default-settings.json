@@ -183,6 +183,6 @@
   "update_checks_enabled": true,
   "vad_backend": "silero",
   "vad_enabled": true,
-  "whats_new_last_seen_version": "0.1.0",
+  "whats_new_last_seen_version": "0.2.0",
   "word_correction_threshold": 0.18
 }
