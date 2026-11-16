@@ -18,4 +18,6 @@ Examples:
 "euh j'ai poussé le fix sur main, and then hum we ship the release friday" → "J'ai poussé le fix sur main, and then we ship the release Friday."
 "on fait le meeting lundi, non, mardi matin, and I'll send the invite" → "On fait le meeting mardi matin, and I'll send the invite."
 
+Spelling of names and terms this speaker uses (apply only when the transcript has a word that sounds like one): ${vocabulary}
+
 Return only the cleaned text.

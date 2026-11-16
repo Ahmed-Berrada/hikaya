@@ -20,6 +20,25 @@ pub fn default_prompt() -> LLMPrompt {
     }
 }
 
+/// Fills Hikaya's placeholders in a cleanup prompt. `${vocabulary}` becomes
+/// the speaker's custom words and rule replacements, so the model spells
+/// names and terms the way the user does. Prompts without it are unchanged.
+pub fn expand(prompt: &str, settings: &AppSettings) -> String {
+    if !prompt.contains("${vocabulary}") {
+        return prompt.to_string();
+    }
+    let rules = super::learning_store()
+        .map(|store| store.active_rules())
+        .unwrap_or_default();
+    let words = hikaya_core::rules::vocabulary(&settings.custom_words, &rules);
+    let list = if words.is_empty() {
+        "(none)".to_string()
+    } else {
+        words.join(", ")
+    };
+    prompt.replace("${vocabulary}", &list)
+}
+
 /// Whether a post-processed text may replace the transcription.
 ///
 /// Only Hikaya's own prompt is checked: it asks for a light cleanup, so a
@@ -79,6 +98,20 @@ mod tests {
             "on se voit mardi à 14h, and bring your laptop",
             "On se voit mardi à 14h, and bring your laptop."
         ));
+    }
+
+    #[test]
+    fn vocabulary_is_filled_from_custom_words() {
+        let mut settings = get_default_settings();
+        settings.custom_words = vec!["GitHub".into(), "Hikaya".into()];
+        assert_eq!(
+            expand("Words: ${vocabulary}.", &settings),
+            "Words: GitHub, Hikaya."
+        );
+        settings.custom_words.clear();
+        assert_eq!(expand("Words: ${vocabulary}.", &settings), "Words: (none).");
+        assert_eq!(expand("No placeholder", &settings), "No placeholder");
+        assert!(default_prompt().prompt.contains("${vocabulary}"));
     }
 
     #[test]

@@ -276,6 +276,8 @@ async fn post_process_transcription(
         debug!("Post-processing skipped because the selected prompt is empty");
         return PostProcessOutcome::Failed;
     }
+    // Hikaya: fill ${vocabulary} with the user's words.
+    let prompt = crate::hikaya::cleanup::expand(&prompt, settings);
 
     debug!(
         "Starting LLM post-processing with provider '{}' (model: {})",
