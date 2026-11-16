@@ -13,6 +13,29 @@ pub fn downmix(interleaved: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Frames this long (at 16 kHz) are judged loud or quiet one at a time.
+const FRAME: usize = 480;
+/// A frame louder than this (RMS, about -46 dBFS) counts as sound.
+const LOUD_RMS: f32 = 0.005;
+/// Least amount of sound, in frames (about 0.3 s), for a stretch to be
+/// worth transcribing.
+const MIN_LOUD_FRAMES: usize = 10;
+
+/// True when 16 kHz mono `samples` contain enough sound to be worth sending
+/// to a speech model. Whisper invents words ("you", "Thank you.") for silent
+/// or near-silent audio, so silence must not reach it.
+pub fn has_speech(samples: &[f32]) -> bool {
+    samples
+        .chunks(FRAME)
+        .filter(|frame| {
+            let energy: f32 = frame.iter().map(|s| s * s).sum::<f32>() / frame.len() as f32;
+            energy.sqrt() > LOUD_RMS
+        })
+        .take(MIN_LOUD_FRAMES)
+        .count()
+        >= MIN_LOUD_FRAMES
+}
+
 /// Converts a mono stream from one sample rate to another, chunk by chunk.
 ///
 /// When reducing the rate, each output sample is the average of the input
@@ -131,6 +154,29 @@ mod tests {
         assert_eq!(downmix(&[0.2, 0.4], 1), [0.2, 0.4]);
         // A trailing partial frame is dropped.
         assert_eq!(downmix(&[1.0, 1.0, 1.0], 2), [1.0]);
+    }
+
+    #[test]
+    fn silence_and_a_click_are_not_speech() {
+        assert!(!has_speech(&[]));
+        assert!(!has_speech(&vec![0.0; 16_000 * 30]));
+        // Background hiss well below speech level.
+        let hiss: Vec<f32> = (0..16_000u64 * 30)
+            .map(|i: u64| ((i * 7919 % 101) as f32 / 101.0 - 0.5) * 0.004)
+            .collect();
+        assert!(!has_speech(&hiss));
+        // A single loud click.
+        let mut click = vec![0.0; 16_000 * 30];
+        click[1000..1200].fill(0.8);
+        assert!(!has_speech(&click));
+    }
+
+    #[test]
+    fn a_second_of_voice_level_sound_is_speech() {
+        let mut audio = vec![0.0; 16_000 * 30];
+        let voice = sine(16_000, 220.0, 1.0);
+        audio[160_000..176_000].copy_from_slice(&voice.iter().map(|s| s * 0.1).collect::<Vec<_>>());
+        assert!(has_speech(&audio));
     }
 
     #[test]
