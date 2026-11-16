@@ -375,5 +375,7 @@ pub fn router(state: AppState) -> Router {
         // 500 records of up to 200 KB each would be 100 MB; real pushes are
         // far smaller. 16 MB bounds memory use per request.
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))
+        .merge(crate::web::router())
+        .layer(axum::middleware::from_fn(crate::web::security_headers))
         .with_state(state)
 }

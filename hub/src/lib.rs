@@ -9,3 +9,4 @@ pub mod snapshot;
 pub mod state;
 pub mod sync;
 pub mod vault;
+pub mod web;

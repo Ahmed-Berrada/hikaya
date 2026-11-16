@@ -3,8 +3,8 @@
 A small server you run on a machine you own. It keeps the complete archive of your dictations and
 meetings, encrypted, and lets your devices sync through it. Design: [ADR 0002](../docs/adr/0002-linux-dev-and-hub-archive.md).
 
-**Status:** the vault, device access, sync, snapshots and Docker packaging work. The web viewer and
-background jobs are next (roadmap v0.3).
+**Status:** the vault, device access, sync, snapshots, Docker packaging and the web viewer work.
+Background jobs are next.
 
 ## How the vault works
 
@@ -90,6 +90,16 @@ name, and a passphrase. On a new hub that passphrase creates the vault. Until th
 your tailnet could create it, so connect your first device right after starting the hub.
 
 After the machine reboots, the hub is locked. Unlock it from **Sync** in the app on any device.
+
+## Web viewer (and iPhone)
+
+Open the hub's address in a browser on your tailnet, for example on your iPhone:
+`https://<machine>.<tailnet>.ts.net`. Pair the browser once with the passphrase. You can then
+search every dictation, and unlock the hub after a reboot without the desktop app. In Safari, **Share
+→ Add to Home Screen** makes it open like an app.
+
+The browser keeps only its device token; revoke it like any other device. The page loads no
+outside resources and runs under a strict Content-Security-Policy.
 
 ## Backups
 

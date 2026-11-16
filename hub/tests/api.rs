@@ -73,6 +73,14 @@ impl Hub {
         (status, value)
     }
 
+    async fn raw(&self, path: &str) -> axum::response::Response {
+        let request = Request::builder()
+            .uri(path)
+            .body(Body::empty())
+            .expect("request");
+        self.app.clone().oneshot(request).await.expect("response")
+    }
+
     async fn state(&self) -> String {
         let (_, body) = self.call("GET", "/api/status", None, None).await;
         body["state"].as_str().expect("state").to_string()
@@ -475,4 +483,56 @@ async fn dictations_are_unreadable_on_disk() {
             );
         }
     }
+}
+
+#[tokio::test]
+async fn the_web_viewer_is_served_with_strict_headers() {
+    let hub = Hub::new();
+    for (path, kind) in [
+        ("/", "text/html"),
+        ("/app.js", "text/javascript"),
+        ("/app.css", "text/css"),
+        ("/icon.svg", "image/svg+xml"),
+        ("/manifest.webmanifest", "application/manifest+json"),
+    ] {
+        let response = hub.raw(path).await;
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+        let headers = response.headers();
+        assert!(
+            headers["content-type"]
+                .to_str()
+                .expect("ascii")
+                .starts_with(kind),
+            "{path}"
+        );
+        let csp = headers["content-security-policy"].to_str().expect("ascii");
+        assert!(
+            csp.contains("script-src 'self'") && !csp.contains("unsafe-inline"),
+            "{path}"
+        );
+        assert!(csp.contains("frame-ancestors 'none'"));
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(headers["referrer-policy"], "no-referrer");
+    }
+    // The page has no inline script for the policy to allow.
+    let body = hub
+        .raw("/")
+        .await
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    assert!(html.contains(r#"<script src="/app.js" defer></script>"#));
+    assert_eq!(html.matches("<script").count(), 1);
+}
+
+#[tokio::test]
+async fn api_answers_are_never_cached() {
+    let hub = Hub::new();
+    let response = hub.raw("/api/status").await;
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    assert!(hub.raw("/").await.headers().get("cache-control").is_none());
+    assert_eq!(hub.raw("/nope").await.status(), StatusCode::NOT_FOUND);
 }
