@@ -88,7 +88,8 @@
       "description": "Enregistre votre micro et ce que joue votre ordinateur (les autres participants d'un appel), puis écrit la transcription au fil de la réunion.",
       "placeholder": "Titre de la réunion (facultatif)",
       "button": "Démarrer l'enregistrement",
-      "consent": "Enregistrer des personnes sans leur accord peut être illégal. Prévenez tout le monde que la réunion est enregistrée."
+      "consent": "Enregistrer des personnes sans leur accord peut être illégal. Prévenez tout le monde que la réunion est enregistrée.",
+      "retention": "L'audio des réunions suit Avancé → Suppression automatique des enregistrements. Les transcriptions et résumés sont toujours conservés."
     },
     "recording": {
       "label": "Enregistrement",

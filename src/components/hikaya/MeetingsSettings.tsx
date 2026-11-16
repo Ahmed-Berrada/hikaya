@@ -444,6 +444,9 @@ export const MeetingsSettings: React.FC = () => {
             <p className="text-xs text-ink-3">
               {t("hikaya.meetings.start.consent")}
             </p>
+            <p className="text-xs text-ink-3">
+              {t("hikaya.meetings.start.retention")}
+            </p>
           </form>
         </SettingsGroup>
       )}
