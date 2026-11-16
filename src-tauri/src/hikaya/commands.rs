@@ -145,3 +145,11 @@ pub fn hikaya_hub_disconnect(
     store.clear_hub_config().map_err(text_error)?;
     Ok(worker.status())
 }
+
+/// Usage numbers for the Learning screen.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_stats(store: Store<'_>) -> Result<super::stats::Stats, String> {
+    let (today, week_start) = super::stats::local_week();
+    store.stats(&today, &week_start).map_err(text_error)
+}

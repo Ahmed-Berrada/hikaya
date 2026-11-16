@@ -9,6 +9,7 @@ pub mod cleanup;
 pub mod commands;
 pub mod meeting;
 pub mod stage;
+pub mod stats;
 pub mod store;
 pub mod sync;
 pub mod sync_worker;

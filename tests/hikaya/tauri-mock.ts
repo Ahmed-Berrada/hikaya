@@ -135,6 +135,17 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           );
           return null;
         },
+        hikaya_stats: () => ({
+          words_today: 312,
+          words_week: 4821,
+          words_total: 18250,
+          dictations_total: 640,
+          minutes_saved: 335,
+          rules: state.rules.length,
+          learned_rules: state.rules.filter((r) => r.source === "learned")
+            .length,
+          top_corrections: [],
+        }),
         hikaya_meeting_active: () => state.activeMeeting,
         hikaya_meetings_list: () =>
           state.meetings.map((m) => ({

@@ -28,6 +28,23 @@
       "save": "Couldn't save the rule",
       "delete": "Couldn't delete the rule",
       "proposal": "Couldn't update the suggestion"
+    },
+    "stats": {
+      "title": "Your dictation",
+      "description": "Counted on this computer since Hikaya was installed.",
+      "today": "Words today",
+      "week": "This week",
+      "total": "In total",
+      "saved": "Typing time saved",
+      "savedValue_one": "about {{count}} min",
+      "savedValue_other": "about {{count}} min",
+      "savedHint": "Estimate: typing at 40 words a minute versus speaking at 150.",
+      "dictations_one": "{{count}} dictation",
+      "dictations_other": "{{count}} dictations",
+      "rules_one": "{{count}} rule, {{learned}} learned from your corrections",
+      "rules_other": "{{count}} rules, {{learned}} learned from your corrections",
+      "topCorrections": "What you correct most",
+      "times": "×{{count}}"
     }
   },
   "correction": {

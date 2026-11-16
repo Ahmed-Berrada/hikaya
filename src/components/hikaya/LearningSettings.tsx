@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowRight, Trash2 } from "lucide-react";
-import { commands, type RuleProposal, type StoredRule } from "@/bindings";
+import {
+  commands,
+  type RuleProposal,
+  type Stats,
+  type StoredRule,
+} from "@/bindings";
 import { notify } from "@/stores/noticeStore";
 import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 import Badge from "../ui/Badge";
@@ -18,6 +23,80 @@ const Replacement: React.FC<{ from: string; to: string }> = ({ from, to }) => (
   </span>
 );
 
+const Figure: React.FC<{ label: string; value: string; hint?: string }> = ({
+  label,
+  value,
+  hint,
+}) => (
+  <div className="flex flex-col gap-0.5" title={hint}>
+    <span className="text-xs text-ink-3">{label}</span>
+    <span className="text-lg font-semibold tabular-nums">{value}</span>
+  </div>
+);
+
+const StatsPanel: React.FC<{ stats: Stats }> = ({ stats }) => {
+  const { t, i18n } = useTranslation();
+  const n = (value: number) => value.toLocaleString(i18n.language);
+  return (
+    <SettingsGroup
+      title={t("hikaya.learning.stats.title")}
+      description={t("hikaya.learning.stats.description")}
+    >
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-4 py-3">
+        <Figure
+          label={t("hikaya.learning.stats.today")}
+          value={n(stats.words_today)}
+        />
+        <Figure
+          label={t("hikaya.learning.stats.week")}
+          value={n(stats.words_week)}
+        />
+        <Figure
+          label={t("hikaya.learning.stats.total")}
+          value={n(stats.words_total)}
+        />
+        <Figure
+          label={t("hikaya.learning.stats.saved")}
+          value={t("hikaya.learning.stats.savedValue", {
+            count: stats.minutes_saved,
+          })}
+          hint={t("hikaya.learning.stats.savedHint")}
+        />
+      </div>
+      <p className="px-4 py-2 text-xs text-ink-3">
+        {t("hikaya.learning.stats.dictations", {
+          count: stats.dictations_total,
+        })}
+        {" · "}
+        {t("hikaya.learning.stats.rules", {
+          count: stats.rules,
+          learned: stats.learned_rules,
+        })}
+      </p>
+      {stats.top_corrections.length > 0 && (
+        <div className="px-4 py-3">
+          <p className="text-xs text-ink-3 mb-2">
+            {t("hikaya.learning.stats.topCorrections")}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {stats.top_corrections.map((c) => (
+              <li
+                key={`${c.from}\u0000${c.to}`}
+                className="flex items-center justify-between gap-3"
+              >
+                <Replacement from={c.from} to={c.to} />
+                <span className="text-xs text-ink-3 tabular-nums">
+                  {t("hikaya.learning.stats.times", { count: c.count })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </SettingsGroup>
+  );
+};
+
 export const LearningSettings: React.FC = () => {
   const { t } = useTranslation();
   const [rules, setRules] = useState<StoredRule[]>([]);
@@ -25,6 +104,7 @@ export const LearningSettings: React.FC = () => {
   const [pattern, setPattern] = useState("");
   const [replacement, setReplacement] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stats, setStats] = useState<Stats | null>(null);
 
   const reload = useCallback(async () => {
     const [loadedRules, loadedProposals] = await Promise.all([
@@ -33,6 +113,8 @@ export const LearningSettings: React.FC = () => {
     ]);
     if (loadedRules.status === "ok") setRules(loadedRules.data);
     if (loadedProposals.status === "ok") setProposals(loadedProposals.data);
+    const loadedStats = await commands.hikayaStats();
+    if (loadedStats.status === "ok") setStats(loadedStats.data);
     const failed =
       loadedRules.status === "error"
         ? loadedRules.error
@@ -93,6 +175,7 @@ export const LearningSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      {stats && <StatsPanel stats={stats} />}
       <SettingsGroup
         title={t("hikaya.learning.proposals.title")}
         description={t("hikaya.learning.proposals.description")}

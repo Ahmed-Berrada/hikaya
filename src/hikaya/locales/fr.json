@@ -28,6 +28,23 @@
       "save": "Impossible d'enregistrer la règle",
       "delete": "Impossible de supprimer la règle",
       "proposal": "Impossible de mettre à jour la suggestion"
+    },
+    "stats": {
+      "title": "Vos dictées",
+      "description": "Compté sur cet ordinateur depuis l'installation de Hikaya.",
+      "today": "Mots aujourd'hui",
+      "week": "Cette semaine",
+      "total": "Au total",
+      "saved": "Temps de frappe gagné",
+      "savedValue_one": "environ {{count}} min",
+      "savedValue_other": "environ {{count}} min",
+      "savedHint": "Estimation : 40 mots par minute au clavier contre 150 à l'oral.",
+      "dictations_one": "{{count}} dictée",
+      "dictations_other": "{{count}} dictées",
+      "rules_one": "{{count}} règle, dont {{learned}} apprise de vos corrections",
+      "rules_other": "{{count}} règles, dont {{learned}} apprises de vos corrections",
+      "topCorrections": "Ce que vous corrigez le plus",
+      "times": "×{{count}}"
     }
   },
   "correction": {

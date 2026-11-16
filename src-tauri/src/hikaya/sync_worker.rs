@@ -170,8 +170,15 @@ fn pasted_text(entry: &HistoryEntry) -> &str {
         .unwrap_or(&entry.transcription_text)
 }
 
-/// Called right after a dictation is saved to history.
+/// Called right after a dictation is saved to history: counts it for the
+/// stats panel and queues it for the hub.
 pub fn on_dictation_saved(app: &AppHandle, entry: &HistoryEntry) {
+    if let Some(store) = app.try_state::<Arc<LearningStore>>() {
+        let (today, _) = super::stats::local_week();
+        if let Err(e) = store.count_dictation(&today, pasted_text(entry)) {
+            log::warn!("Could not count the dictation: {e:#}");
+        }
+    }
     let Some(worker) = app.try_state::<Arc<SyncWorker>>() else {
         return;
     };
