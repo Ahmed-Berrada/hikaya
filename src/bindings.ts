@@ -1113,6 +1113,90 @@ async hikayaHubDisconnect() : Promise<Result<SyncStatus, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async hikayaMeetingStart(title: string) : Promise<Result<ActiveMeeting, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_start", { title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaMeetingStop() : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_stop") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaMeetingActive() : Promise<ActiveMeeting | null> {
+    return await TAURI_INVOKE("hikaya_meeting_active");
+},
+async hikayaMeetingsList() : Promise<Result<MeetingSummary[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meetings_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaMeetingGet(id: number) : Promise<Result<MeetingDetail | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_get", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaMeetingRename(id: number, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_rename", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async hikayaMeetingDelete(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_delete", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Summarizes a meeting with the post-processing provider and saves it.
+ */
+async hikayaMeetingSummarize(id: number, you: string, others: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_summarize", { id, you, others }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The meeting as Markdown or SRT text.
+ */
+async hikayaMeetingExport(id: number, format: ExportFormat, labels: ExportLabels) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_export", { id, format, labels }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Writes exported text to a file the user picked in a save dialog.
+ */
+async hikayaMeetingSaveExport(path: string, contents: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_save_export", { path, contents }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Queues the entry to be transcribed again with the current model. Its
  * progress and outcome arrive as `TranscriptionJob` events.
@@ -1213,6 +1297,22 @@ transcriptionJob: "transcription-job"
 
 /** user-defined types **/
 
+/**
+ * The meeting being recorded, as shown in the UI.
+ */
+export type ActiveMeeting = { id: number; title: string; 
+/**
+ * Unix ms.
+ */
+started_at: number; microphone: string; 
+/**
+ * The system-audio device, or `None` if it could not be opened.
+ */
+system_audio: string | null; 
+/**
+ * Why system audio is missing, when it is.
+ */
+system_audio_error: string | null }
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
  * guarantees every field — including ones added in the future — falls back to
@@ -1339,6 +1439,18 @@ export type ChineseScript =
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * File formats a meeting can be exported to.
+ */
+export type ExportFormat = "markdown" | "srt"
+/**
+ * Words the export uses, in the UI's language.
+ */
+export type ExportLabels = { you: string; others: string; summary: string; transcript: string; 
+/**
+ * The meeting's start, already formatted for the user.
+ */
+started: string }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
@@ -1442,6 +1554,50 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
  * A macOS privacy permission Handy asks for during onboarding.
  */
 export type MacPermission = "accessibility" | "microphone"
+/**
+ * A meeting with its whole transcript.
+ */
+export type MeetingDetail = { meeting: MeetingSummary; lines: MeetingLine[]; summary: string | null }
+/**
+ * One transcript line as sent to the UI.
+ */
+export type MeetingLine = { start_ms: number; end_ms: number; 
+/**
+ * `you` or `others`.
+ */
+speaker: string; text: string }
+/**
+ * Where a meeting is in its life.
+ */
+export type MeetingStatus = 
+/**
+ * Audio is being captured.
+ */
+"recording" | 
+/**
+ * Recording stopped; the last segments are being transcribed.
+ */
+"transcribing" | 
+/**
+ * The transcript is complete.
+ */
+"done" | 
+/**
+ * The app stopped during the meeting. What was saved is kept.
+ */
+"interrupted"
+/**
+ * A meeting as listed in the UI.
+ */
+export type MeetingSummary = { id: number; title: string; 
+/**
+ * Unix ms.
+ */
+started_at: number; duration_ms: number; status: MeetingStatus; 
+/**
+ * Whether the other people's audio was captured too.
+ */
+system_audio: boolean; has_summary: boolean; line_count: number }
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
