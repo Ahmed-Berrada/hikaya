@@ -22,7 +22,18 @@ export default defineConfig({
   projects: [
     {
       name: "iphone",
-      use: { ...devices["iPhone 14 Plus"], browserName: "chromium" },
+      use: {
+        ...devices["iPhone 14 Plus"],
+        browserName: "chromium",
+        // A fake microphone (a tone) for the recorder test.
+        permissions: ["microphone"],
+        launchOptions: {
+          args: [
+            "--use-fake-ui-for-media-stream",
+            "--use-fake-device-for-media-stream",
+          ],
+        },
+      },
     },
   ],
   webServer: {

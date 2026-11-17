@@ -83,7 +83,30 @@
             aria-selected="false"
             data-t="meetings"
           ></button>
+          <button
+            id="tab-record"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-t="record"
+          ></button>
         </nav>
+        <!-- Records on this phone; a computer with Hikaya transcribes it. -->
+        <section id="recorder" class="card" hidden>
+          <p class="hint" data-t="recordHint"></p>
+          <label
+            ><span data-t="recordingTitle"></span>
+            <input
+              id="rec-title"
+              type="text"
+              maxlength="200"
+              autocomplete="off"
+          /></label>
+          <button id="rec-toggle" type="button" class="record"></button>
+          <p id="rec-status" class="hint" role="status"></p>
+          <h3 data-t="recordings"></h3>
+          <ol id="rec-list"></ol>
+        </section>
         <form id="search" role="search">
           <input
             id="q"

@@ -37,7 +37,33 @@ const STRINGS = {
     transcript: "Transcript",
     you: "You",
     others: "Others",
+    room: "Room",
     lines: "lines",
+    record: "Record",
+    recordHint:
+      "Records with this phone's microphone. Keep this page open and the screen on until you stop. Your computer transcribes it the next time Hikaya syncs.",
+    recordingTitle: "Title (optional)",
+    start: "● Start recording",
+    stop: "■ Stop",
+    recordings: "Recordings",
+    noRecordings: "No recordings yet.",
+    recordingNow: "Recording",
+    partsWaiting: "part(s) not uploaded yet; keep this page open",
+    allUploaded: "Everything is uploaded.",
+    statusRecording: "Interrupted",
+    statusUploading: "Uploading",
+    statusPending: "Waiting for your computer",
+    statusClaimed: "Being transcribed",
+    statusDone: "Transcribed",
+    statusFailed: "Failed",
+    open: "Open",
+    retry: "Retry",
+    sendSaved: "Send what was saved",
+    delete: "Delete",
+    confirmDelete: "Delete this recording and its audio?",
+    noRecorder: "This browser cannot record audio.",
+    micDenied: "Allow the microphone to record.",
+    leaveWarning: "A recording is still uploading.",
   },
   fr: {
     pairTitle: "Ouvrir vos archives",
@@ -72,7 +98,33 @@ const STRINGS = {
     transcript: "Transcription",
     you: "Vous",
     others: "Autres",
+    room: "Salle",
     lines: "lignes",
+    record: "Enregistrer",
+    recordHint:
+      "Enregistre avec le micro de ce téléphone. Gardez cette page ouverte et l'écran allumé jusqu'à l'arrêt. Votre ordinateur le transcrit à la prochaine synchronisation de Hikaya.",
+    recordingTitle: "Titre (facultatif)",
+    start: "● Démarrer l'enregistrement",
+    stop: "■ Arrêter",
+    recordings: "Enregistrements",
+    noRecordings: "Aucun enregistrement pour l'instant.",
+    recordingNow: "Enregistrement",
+    partsWaiting: "partie(s) pas encore envoyée(s) ; gardez cette page ouverte",
+    allUploaded: "Tout est envoyé.",
+    statusRecording: "Interrompu",
+    statusUploading: "Envoi en cours",
+    statusPending: "En attente de votre ordinateur",
+    statusClaimed: "Transcription en cours",
+    statusDone: "Transcrit",
+    statusFailed: "Échec",
+    open: "Ouvrir",
+    retry: "Réessayer",
+    sendSaved: "Envoyer ce qui a été enregistré",
+    delete: "Supprimer",
+    confirmDelete: "Supprimer cet enregistrement et son audio ?",
+    noRecorder: "Ce navigateur ne peut pas enregistrer de son.",
+    micDenied: "Autorisez le micro pour enregistrer.",
+    leaveWarning: "Un enregistrement est encore en cours d'envoi.",
   },
 };
 
@@ -111,7 +163,7 @@ const store = {
 let memoryToken = store.get();
 let oldest = null; // created_at of the last shown dictation, for paging
 let query = "";
-let tab = "dictations"; // or "meetings"
+let tab = "dictations"; // or "meetings" or "record"
 
 class HubError extends Error {
   constructor(status, code, message) {
@@ -304,8 +356,11 @@ async function openMeeting(id) {
       time.className = "time";
       time.textContent = clock(l.start_ms);
       const who = document.createElement("span");
-      who.className = `speaker ${l.speaker === "you" ? "you" : ""}`;
-      who.textContent = `${t(l.speaker === "you" ? "you" : "others")}:`;
+      const speaker = ["you", "room"].includes(l.speaker)
+        ? l.speaker
+        : "others";
+      who.className = `speaker ${speaker === "you" ? "you" : ""}`;
+      who.textContent = `${t(speaker)}:`;
       li.append(time, who, document.createTextNode(l.text));
       lines.append(li);
     }
@@ -325,14 +380,23 @@ function showMeeting(on) {
   window.scrollTo(0, 0);
 }
 
-function selectTab(name) {
+function markTab(name) {
   tab = name;
-  for (const which of ["dictations", "meetings"]) {
+  for (const which of ["dictations", "meetings", "record"]) {
     $(`tab-${which}`).setAttribute("aria-selected", String(which === name));
   }
+  $("recorder").hidden = name !== "record";
+}
+
+function selectTab(name) {
+  markTab(name);
   $("q").placeholder = t(name === "meetings" ? "searchMeetings" : "search");
   $("q").setAttribute("aria-label", $("q").placeholder);
   showMeeting(false);
+  const recording = name === "record";
+  for (const id of ["search", "results", "more", "empty"]) {
+    if (recording) $(id).hidden = true;
+  }
   oldest = null;
   void load(false);
 }
@@ -342,6 +406,11 @@ async function load(append = false) {
   if (query) params.set("q", query);
   if (append && oldest !== null) params.set("before", String(oldest));
   try {
+    if (tab === "record") {
+      renderRecordings(await api("/api/recordings?limit=50"));
+      showError(null);
+      return;
+    }
     if (tab === "meetings") {
       renderMeetings(await api(`/api/meetings?${params}`), append);
     } else {
@@ -393,6 +462,330 @@ async function refresh() {
     await handle(error);
   }
 }
+
+// ---- Recording on this phone (ADR 0004) ------------------------------------
+//
+// MediaRecorder hands over a few seconds of audio at a time. Each piece is
+// uploaded as a numbered chunk; when recording stops, the hub is told how
+// many chunks make the file. Uploads are retried until they succeed, in
+// order, so a weak connection delays the upload but loses nothing while the
+// page stays open.
+
+const CHUNK_MS = 5000;
+const outbox = []; // {kind: "chunk", id, index, blob} or {kind: "finish", id, chunks}
+let sending = false;
+let failures = 0;
+let active = null; // {id, recorder, stream, started, timer, wake}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function recorderType() {
+  if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices)
+    return null;
+  const types = [
+    "audio/mp4",
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+  ];
+  return types.find((type) => MediaRecorder.isTypeSupported(type)) ?? null;
+}
+
+async function upload(item) {
+  if (item.kind === "finish") {
+    if (item.chunks === 0) {
+      return api(`/api/recordings/${item.id}`, { method: "DELETE" });
+    }
+    return api(`/api/recordings/${item.id}/finish`, {
+      method: "POST",
+      body: { chunks: item.chunks },
+    });
+  }
+  let response;
+  try {
+    response = await fetch(`/api/recordings/${item.id}/chunks/${item.index}`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${memoryToken}`,
+        "content-type": "application/octet-stream",
+      },
+      body: item.blob,
+      cache: "no-store",
+    });
+  } catch {
+    throw new HubError(0, "unreachable", t("unreachable"));
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    throw new HubError(
+      response.status,
+      data?.error ?? "error",
+      data?.message ?? response.statusText,
+    );
+  }
+}
+
+/** Errors worth retrying: no connection, a locked hub, a busy server. */
+const retryable = (error) =>
+  !error.status ||
+  [408, 423, 429].includes(error.status) ||
+  error.status >= 500;
+
+async function pump() {
+  if (sending) return;
+  sending = true;
+  try {
+    while (outbox.length) {
+      const item = outbox[0];
+      try {
+        await upload(item);
+        outbox.shift();
+        failures = 0;
+        if (item.kind === "finish" && tab === "record") void load(false);
+      } catch (error) {
+        if (!retryable(error)) {
+          outbox.shift();
+          showError(error);
+        } else {
+          failures += 1;
+          await sleep(Math.min(30_000, 1000 * 2 ** failures));
+        }
+      }
+      showRecorderStatus();
+    }
+  } finally {
+    sending = false;
+    showRecorderStatus();
+  }
+}
+
+function showRecorderStatus() {
+  $("rec-toggle").textContent = t(active ? "stop" : "start");
+  $("rec-toggle").classList.toggle("on", Boolean(active));
+  $("rec-title").disabled = Boolean(active);
+  const waiting = outbox.filter((item) => item.kind === "chunk").length;
+  const parts = [];
+  if (active)
+    parts.push(`${t("recordingNow")} ${clock(Date.now() - active.started)}`);
+  if (waiting) parts.push(`${waiting} ${t("partsWaiting")}`);
+  else if (!active && outbox.length === 0 && $("rec-status").dataset.used)
+    parts.push(t("allUploaded"));
+  $("rec-status").textContent = parts.join(" · ");
+}
+
+async function keepScreenOn() {
+  if (!active || active.wake || !navigator.wakeLock) return;
+  try {
+    active.wake = await navigator.wakeLock.request("screen");
+    active.wake.addEventListener("release", () => {
+      if (active) active.wake = null;
+    });
+  } catch {
+    /* not allowed here: the hint already asks to keep the screen on */
+  }
+}
+
+async function startRecording() {
+  const type = recorderType();
+  if (!type) throw new Error(t("noRecorder"));
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    throw new Error(t("micDenied"));
+  }
+  const title =
+    $("rec-title").value.trim() ||
+    new Intl.DateTimeFormat(lang, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date());
+  let created;
+  try {
+    created = await api("/api/recordings", {
+      method: "POST",
+      body: { title, mime: type },
+    });
+  } catch (error) {
+    for (const track of stream.getTracks()) track.stop();
+    throw error;
+  }
+  const id = created.id;
+  const recorder = new MediaRecorder(stream, {
+    mimeType: type,
+    audioBitsPerSecond: 64_000,
+  });
+  let index = 0;
+  recorder.addEventListener("dataavailable", (event) => {
+    if (!event.data || event.data.size === 0) return;
+    outbox.push({ kind: "chunk", id, index, blob: event.data });
+    index += 1;
+    void pump();
+  });
+  // Also runs when the browser stops the recorder itself (the page was
+  // hidden, the microphone was taken): what was recorded is kept.
+  recorder.addEventListener("stop", () => {
+    for (const track of stream.getTracks()) track.stop();
+    if (active?.id === id) {
+      clearInterval(active.timer);
+      active.wake?.release().catch(() => {});
+      active = null;
+    }
+    outbox.push({ kind: "finish", id, chunks: index });
+    void pump();
+    showRecorderStatus();
+  });
+  active = {
+    id,
+    recorder,
+    stream,
+    started: Date.now(),
+    timer: setInterval(showRecorderStatus, 1000),
+    wake: null,
+  };
+  $("rec-status").dataset.used = "1";
+  recorder.start(CHUNK_MS);
+  await keepScreenOn();
+  showRecorderStatus();
+  void load(false);
+}
+
+const RECORDING_STATUS = {
+  recording: "statusRecording",
+  pending: "statusPending",
+  claimed: "statusClaimed",
+  done: "statusDone",
+  failed: "statusFailed",
+};
+
+function actionButton(label, run) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "link";
+  button.textContent = t(label);
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      await run();
+      showError(null);
+    } catch (error) {
+      await handle(error);
+    } finally {
+      button.disabled = false;
+      void load(false);
+    }
+  });
+  return button;
+}
+
+function openFromRecording(meetingId) {
+  markTab("meetings");
+  void openMeeting(meetingId);
+}
+
+function renderRecordings(recordings) {
+  const list = $("rec-list");
+  list.replaceChildren();
+  const format = new Intl.DateTimeFormat(lang, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  const uploading = new Set(outbox.map((item) => item.id));
+  for (const r of recordings) {
+    const item = document.createElement("li");
+    const title = document.createElement("div");
+    title.className = "title";
+    title.textContent = r.title;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const live = active?.id === r.id;
+    const status =
+      live || (r.status === "recording" && uploading.has(r.id))
+        ? live
+          ? "recordingNow"
+          : "statusUploading"
+        : (RECORDING_STATUS[r.status] ?? r.status);
+    const size = r.bytes > 0 ? ` · ${(r.bytes / 1_048_576).toFixed(1)} MB` : "";
+    meta.textContent = `${format.format(new Date(r.created_at))} · ${r.device}${size} · ${t(status)}`;
+    item.append(title, meta);
+    if (r.error && r.status === "failed") {
+      const why = document.createElement("div");
+      why.className = "meta error";
+      why.textContent = r.error;
+      item.append(why);
+    }
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    if (r.status === "done" && r.meeting_id) {
+      actions.append(
+        actionButton("open", () => openFromRecording(r.meeting_id)),
+      );
+    }
+    if (r.status === "failed") {
+      actions.append(
+        actionButton("retry", () =>
+          api(`/api/recordings/${r.id}/retry`, { method: "POST" }),
+        ),
+      );
+    }
+    if (
+      r.status === "recording" &&
+      !live &&
+      !uploading.has(r.id) &&
+      r.chunks > 0
+    ) {
+      actions.append(
+        actionButton("sendSaved", () =>
+          api(`/api/recordings/${r.id}/finish`, {
+            method: "POST",
+            body: { chunks: r.chunks },
+          }),
+        ),
+      );
+    }
+    if (!live && !uploading.has(r.id)) {
+      actions.append(
+        actionButton("delete", async () => {
+          if (!window.confirm(t("confirmDelete"))) return;
+          await api(`/api/recordings/${r.id}`, { method: "DELETE" });
+        }),
+      );
+    }
+    if (actions.childElementCount) item.append(actions);
+    list.append(item);
+  }
+  if (!recordings.length) {
+    const empty = document.createElement("li");
+    empty.className = "hint";
+    empty.textContent = t("noRecordings");
+    list.append(empty);
+  }
+}
+
+$("rec-toggle").addEventListener("click", async () => {
+  const button = $("rec-toggle");
+  button.disabled = true;
+  try {
+    if (active) {
+      active.recorder.stop();
+    } else {
+      await startRecording();
+    }
+    showError(null);
+  } catch (error) {
+    showError(error);
+  } finally {
+    button.disabled = false;
+    showRecorderStatus();
+  }
+});
+$("tab-record").addEventListener("click", () => selectTab("record"));
+window.addEventListener("beforeunload", (event) => {
+  if (active || outbox.length) {
+    event.preventDefault();
+    event.returnValue = t("leaveWarning");
+  }
+});
 
 function busy(form, on) {
   for (const el of form.elements) el.disabled = on;
@@ -470,6 +863,10 @@ $("q").setAttribute("aria-label", t("search"));
 $("pair-name").value =
   `${t("defaultName")} ${/iPhone|iPad/.test(navigator.userAgent) ? "iPhone" : ""}`.trim();
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") void refresh();
+  if (document.visibilityState !== "visible") return;
+  // The screen lock is released when the page is hidden; take it again.
+  void keepScreenOn();
+  void refresh();
 });
+showRecorderStatus();
 void refresh();
