@@ -67,6 +67,11 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
         HeaderValue::from_static("no-referrer"),
     );
     headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    // The recorder needs the microphone; nothing needs anything else.
+    headers.insert(
+        "permissions-policy",
+        HeaderValue::from_static("microphone=(self), camera=(), geolocation=(), payment=()"),
+    );
     if is_api {
         headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
