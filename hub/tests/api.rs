@@ -73,6 +73,37 @@ impl Hub {
         (status, value)
     }
 
+    /// Sends raw bytes and returns the status and raw answer.
+    async fn bytes(
+        &self,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: &'static [u8],
+    ) -> (StatusCode, Option<String>, Vec<u8>) {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/octet-stream")
+            .body(Body::from(body))
+            .expect("request");
+        let response = self.app.clone().oneshot(request).await.expect("response");
+        let status = response.status();
+        let mime = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .expect("body")
+            .to_bytes();
+        (status, mime, bytes.to_vec())
+    }
+
     async fn raw(&self, path: &str) -> axum::response::Response {
         let request = Request::builder()
             .uri(path)
@@ -579,4 +610,131 @@ async fn a_meeting_pushed_by_one_device_is_readable_from_another() {
     assert_eq!(status, StatusCode::NOT_FOUND);
     let (status, _) = hub.call("GET", "/api/meetings", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn a_phone_recording_is_transcribed_by_a_computer_through_the_hub() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, phone) = hub.device("iphone").await;
+    let (_, laptop) = hub.device("laptop").await;
+
+    let (status, body) = hub
+        .call(
+            "POST",
+            "/api/recordings",
+            Some(&phone),
+            Some(json!({ "title": "Café avec Sam", "mime": "audio/mp4" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    let id = body["id"].as_str().expect("id").to_string();
+
+    for (index, chunk) in [(0, &b"head"[..]), (1, &b"tail"[..])] {
+        let (status, _, _) = hub
+            .bytes(
+                "PUT",
+                &format!("/api/recordings/{id}/chunks/{index}"),
+                &phone,
+                chunk,
+            )
+            .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+    }
+    let (status, body) = hub
+        .call(
+            "POST",
+            &format!("/api/recordings/{id}/finish"),
+            Some(&phone),
+            Some(json!({ "chunks": 3 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["message"], "chunk 2 is missing");
+    let (status, body) = hub
+        .call(
+            "POST",
+            &format!("/api/recordings/{id}/finish"),
+            Some(&phone),
+            Some(json!({ "chunks": 2 })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "pending");
+
+    let (status, body) = hub
+        .call("POST", "/api/recordings/claim", Some(&laptop), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["id"], id.as_str());
+    let (status, _) = hub
+        .call("POST", "/api/recordings/claim", Some(&laptop), None)
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "nothing else waits");
+
+    let (status, mime, audio) = hub
+        .bytes("GET", &format!("/api/recordings/{id}/audio"), &laptop, b"")
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(mime.as_deref(), Some("audio/mp4"));
+    assert_eq!(audio, b"headtail");
+    let (status, _, _) = hub
+        .bytes("GET", &format!("/api/recordings/{id}/audio"), &phone, b"")
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT, "only the claimer downloads");
+
+    let (status, body) = hub
+        .call(
+            "POST",
+            "/api/sync/push",
+            Some(&laptop),
+            Some(json!({ "meetings": [{
+                "id": "m-phone", "title": "Café avec Sam", "started_at": 1000,
+                "duration_ms": 30000, "updated_at": 1000, "summary": null,
+                "lines": [{ "start_ms": 0, "end_ms": 30000, "speaker": "room", "text": "On se voit jeudi." }]
+            }] })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = hub
+        .call(
+            "POST",
+            &format!("/api/recordings/{id}/complete"),
+            Some(&laptop),
+            Some(json!({ "meeting_id": "m-phone" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "done");
+
+    let (status, body) = hub.call("GET", "/api/recordings", Some(&phone), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["meeting_id"], "m-phone");
+    assert_eq!(body[0]["chunks"], 0, "the audio is gone");
+    let (_, body) = hub
+        .call("GET", "/api/meetings/m-phone", Some(&phone), None)
+        .await;
+    assert_eq!(body["lines"][0]["speaker"], "room");
+}
+
+#[tokio::test]
+async fn recordings_need_a_token_and_a_known_audio_type() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, phone) = hub.device("iphone").await;
+    let (status, _) = hub.call("GET", "/api/recordings", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _) = hub
+        .call(
+            "POST",
+            "/api/recordings",
+            Some(&phone),
+            Some(json!({ "title": "x", "mime": "text/html" })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    let (status, _, _) = hub
+        .bytes("PUT", "/api/recordings/nope/chunks/0", &phone, b"x")
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
