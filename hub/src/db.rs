@@ -96,6 +96,29 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
         INSERT INTO meetings_fts (rowid, title, summary, transcript)
         VALUES (new.rowid, new.title, coalesce(new.summary, ''), new.transcript);
     END;",
+    // Recordings made on a phone, waiting for a computer (ADR 0004). The
+    // audio is kept as chunks until the recording becomes a meeting.
+    "CREATE TABLE recordings (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id),
+        title TEXT NOT NULL,
+        mime TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        bytes INTEGER NOT NULL DEFAULT 0,
+        claimed_by INTEGER REFERENCES devices(id),
+        claimed_at INTEGER,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        meeting_id TEXT
+    );
+    CREATE INDEX recordings_waiting ON recordings (status, created_at);
+    CREATE TABLE recording_chunks (
+        recording_id TEXT NOT NULL REFERENCES recordings(id),
+        idx INTEGER NOT NULL,
+        data BLOB NOT NULL,
+        PRIMARY KEY (recording_id, idx)
+    );",
 ];
 
 /// Brings the database to the current schema. Each migration and its version

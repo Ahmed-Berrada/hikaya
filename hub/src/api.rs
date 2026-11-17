@@ -15,11 +15,22 @@
 //! | `GET  /api/dictations`      | a device              | lists or searches the archive        |
 //! | `GET  /api/meetings`        | a device              | lists or searches meetings           |
 //! | `GET  /api/meetings/{id}`   | a device              | one meeting with its transcript      |
+//! | `GET  /api/recordings`      | a device              | phone recordings and their state     |
+//! | `POST /api/recordings`      | a device              | starts a recording                   |
+//! | `PUT  /api/recordings/{id}/chunks/{n}` | its device | uploads audio chunk `n`              |
+//! | `POST /api/recordings/{id}/finish` | its device     | marks it ready to transcribe         |
+//! | `POST /api/recordings/claim` | a device             | takes the oldest waiting recording   |
+//! | `GET  /api/recordings/{id}/audio` | the claimer     | downloads its audio                  |
+//! | `POST /api/recordings/{id}/complete` | the claimer  | links the meeting, deletes the audio |
+//! | `POST /api/recordings/{id}/fail` | the claimer      | gives it back after an error         |
+//! | `POST /api/recordings/{id}/retry` | a device        | makes a failed recording wait again  |
+//! | `DELETE /api/recordings/{id}` | a device            | deletes it and its audio             |
 //!
 //! While the hub is locked, anything that needs data answers `423 Locked`,
 //! which tells a client to keep its changes queued and try again later.
 
 use crate::devices::{self, Device};
+use crate::recordings::{self, RecordingError, RecordingView};
 use crate::state::{AppState, LockState, UnlockError};
 use crate::sync::{self, PushError};
 use crate::vault::VaultError;
@@ -27,7 +38,7 @@ use axum::extract::{DefaultBodyLimit, FromRequestParts, Path, Query, State};
 use axum::http::request::Parts;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use hikaya_core::sync::{PullResponse, PushRequest, PushResponse};
 use serde::{Deserialize, Serialize};
@@ -366,6 +377,190 @@ async fn get_meeting(
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "not_found", "no such meeting"))
 }
 
+impl From<RecordingError> for ApiError {
+    fn from(error: RecordingError) -> Self {
+        match error {
+            RecordingError::NotFound => {
+                Self::new(StatusCode::NOT_FOUND, "not_found", error.to_string())
+            }
+            RecordingError::Invalid(_) => Self::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_recording",
+                error.to_string(),
+            ),
+            RecordingError::Conflict(_) => {
+                Self::new(StatusCode::CONFLICT, "conflict", error.to_string())
+            }
+            RecordingError::TooLarge => Self::new(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "too_large",
+                error.to_string(),
+            ),
+            RecordingError::Other(error) => Self::internal(error),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct NewRecordingBody {
+    title: String,
+    mime: String,
+}
+
+#[derive(Deserialize)]
+struct FinishBody {
+    chunks: i64,
+}
+
+#[derive(Deserialize)]
+struct CompleteBody {
+    meeting_id: String,
+}
+
+#[derive(Deserialize)]
+struct FailBody {
+    error: String,
+}
+
+#[derive(Deserialize)]
+struct ListQuery {
+    limit: Option<usize>,
+}
+
+async fn list_recordings(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Query(query): Query<ListQuery>,
+) -> Result<Json<Vec<RecordingView>>, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(Json(
+        recordings::list(&conn, query.limit.unwrap_or(50)).map_err(ApiError::internal)?,
+    ))
+}
+
+async fn create_recording(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Json(body): Json<NewRecordingBody>,
+) -> Result<(StatusCode, Json<RecordingView>), ApiError> {
+    let conn = data_connection(&state)?;
+    let created = recordings::create(&conn, device.id, &body.title, &body.mime)?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+async fn get_recording(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Path(id): Path<String>,
+) -> Result<Json<RecordingView>, ApiError> {
+    let conn = data_connection(&state)?;
+    recordings::get(&conn, &id)
+        .map_err(ApiError::internal)?
+        .map(Json)
+        .ok_or_else(|| RecordingError::NotFound.into())
+}
+
+async fn put_recording_chunk(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Path((id, index)): Path<(String, i64)>,
+    body: axum::body::Bytes,
+) -> Result<StatusCode, ApiError> {
+    blocking(move || {
+        let mut conn = data_connection(&state)?;
+        Ok(recordings::put_chunk(
+            &mut conn, device.id, &id, index, &body,
+        )?)
+    })
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn finish_recording(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Path(id): Path<String>,
+    Json(body): Json<FinishBody>,
+) -> Result<Json<RecordingView>, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(Json(recordings::finish(
+        &conn,
+        device.id,
+        &id,
+        body.chunks,
+    )?))
+}
+
+async fn claim_recording(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+) -> Result<Response, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(
+        match recordings::claim(&conn, device.id).map_err(ApiError::internal)? {
+            Some(recording) => Json(recording).into_response(),
+            None => StatusCode::NO_CONTENT.into_response(),
+        },
+    )
+}
+
+async fn recording_audio(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let (mime, audio) = blocking(move || {
+        let conn = data_connection(&state)?;
+        Ok(recordings::audio(&conn, device.id, &id)?)
+    })
+    .await?;
+    Ok(([(header::CONTENT_TYPE, mime)], audio).into_response())
+}
+
+async fn complete_recording(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Path(id): Path<String>,
+    Json(body): Json<CompleteBody>,
+) -> Result<Json<RecordingView>, ApiError> {
+    let mut conn = data_connection(&state)?;
+    Ok(Json(recordings::complete(
+        &mut conn,
+        device.id,
+        &id,
+        &body.meeting_id,
+    )?))
+}
+
+async fn fail_recording(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Path(id): Path<String>,
+    Json(body): Json<FailBody>,
+) -> Result<Json<RecordingView>, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(Json(recordings::fail(&conn, device.id, &id, &body.error)?))
+}
+
+async fn retry_recording(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Path(id): Path<String>,
+) -> Result<Json<RecordingView>, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(Json(recordings::retry(&conn, &id)?))
+}
+
+async fn delete_recording(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let mut conn = data_connection(&state)?;
+    recordings::delete(&mut conn, &id)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 #[derive(Deserialize)]
 struct DictationsQuery {
     q: Option<String>,
@@ -404,6 +599,24 @@ pub fn router(state: AppState) -> Router {
         .route("/api/dictations", get(list_dictations))
         .route("/api/meetings", get(list_meetings))
         .route("/api/meetings/{id}", get(get_meeting))
+        .route(
+            "/api/recordings",
+            get(list_recordings).post(create_recording),
+        )
+        .route("/api/recordings/claim", post(claim_recording))
+        .route(
+            "/api/recordings/{id}",
+            get(get_recording).delete(delete_recording),
+        )
+        .route(
+            "/api/recordings/{id}/chunks/{index}",
+            put(put_recording_chunk),
+        )
+        .route("/api/recordings/{id}/finish", post(finish_recording))
+        .route("/api/recordings/{id}/audio", get(recording_audio))
+        .route("/api/recordings/{id}/complete", post(complete_recording))
+        .route("/api/recordings/{id}/fail", post(fail_recording))
+        .route("/api/recordings/{id}/retry", post(retry_recording))
         // 500 records of up to 200 KB each would be 100 MB; real pushes are
         // far smaller. 16 MB bounds memory use per request.
         .layer(DefaultBodyLimit::max(16 * 1024 * 1024))

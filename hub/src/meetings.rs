@@ -23,8 +23,8 @@ pub fn validate(meeting: &MeetingRecord) -> Result<(), PushError> {
         return invalid("the summary is too long");
     }
     for line in &meeting.lines {
-        if line.speaker != "you" && line.speaker != "others" {
-            return invalid("a line's speaker must be you or others");
+        if !matches!(line.speaker.as_str(), "you" | "others" | "room") {
+            return invalid("a line's speaker must be you, others or room");
         }
         if line.text.len() > MAX_TEXT_BYTES || line.end_ms < line.start_ms {
             return invalid("a transcript line is invalid");
