@@ -259,19 +259,30 @@ pub fn finish(
         // Finishing twice is fine: the phone may not have seen the answer.
         return Ok(current);
     }
-    if chunks < 1 || current.chunks != chunks {
-        let first_missing: i64 = conn.query_row(
-            "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i + 1 < ?2)
-             SELECT coalesce(min(i), -1) FROM n
-             WHERE i NOT IN (SELECT idx FROM recording_chunks WHERE recording_id = ?1)",
-            params![id, chunks.max(1)],
-            |row| row.get(0),
-        )?;
-        return Err(RecordingError::Conflict(if first_missing >= 0 {
-            format!("chunk {first_missing} is missing")
-        } else {
-            format!("expected {chunks} chunks, have {}", current.chunks)
-        }));
+    if !(1..=100_000).contains(&chunks) {
+        return Err(RecordingError::Conflict(
+            "a recording needs at least one chunk".into(),
+        ));
+    }
+    // Every index from 0 to chunks - 1, not just the right count: chunks 0
+    // and 2 are two chunks with a hole.
+    let first_missing: Option<i64> = conn.query_row(
+        "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i + 1 < ?2)
+         SELECT min(i) FROM n
+         WHERE i NOT IN (SELECT idx FROM recording_chunks WHERE recording_id = ?1)",
+        params![id, chunks],
+        |row| row.get(0),
+    )?;
+    if let Some(missing) = first_missing {
+        return Err(RecordingError::Conflict(format!(
+            "chunk {missing} is missing"
+        )));
+    }
+    if current.chunks != chunks {
+        return Err(RecordingError::Conflict(format!(
+            "expected {chunks} chunks, have {}",
+            current.chunks
+        )));
     }
     conn.execute(
         "UPDATE recordings SET status = 'pending' WHERE id = ?1",
@@ -499,7 +510,15 @@ mod tests {
             Err(RecordingError::Conflict(why)) => assert_eq!(why, "chunk 1 is missing"),
             other => panic!("expected a conflict, got {other:?}"),
         }
+        match finish(&conn, phone, &r.id, 2) {
+            Err(RecordingError::Conflict(why)) => assert_eq!(why, "chunk 1 is missing"),
+            other => panic!("two chunks with a hole must be refused, got {other:?}"),
+        }
         put_chunk(&mut conn, phone, &r.id, 1, b"bb").expect("1");
+        match finish(&conn, phone, &r.id, 2) {
+            Err(RecordingError::Conflict(why)) => assert_eq!(why, "expected 2 chunks, have 3"),
+            other => panic!("an extra chunk must be refused, got {other:?}"),
+        }
         assert_eq!(
             finish(&conn, phone, &r.id, 3).expect("finish").status,
             "pending"
