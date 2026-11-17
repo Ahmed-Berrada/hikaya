@@ -121,6 +121,7 @@ mod tests {
         SpeakerNames {
             you: "You".into(),
             others: "Others".into(),
+            room: "Room".into(),
         }
     }
 

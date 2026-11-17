@@ -148,7 +148,8 @@
     },
     "speakers": {
       "you": "You",
-      "others": "Others"
+      "others": "Others",
+      "room": "Room"
     },
     "errors": {
       "start": "Couldn't start the meeting",

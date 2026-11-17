@@ -74,21 +74,6 @@ pub struct MeetingDetail {
     pub summary: Option<String>,
 }
 
-fn speaker_str(speaker: Speaker) -> &'static str {
-    match speaker {
-        Speaker::You => "you",
-        Speaker::Others => "others",
-    }
-}
-
-fn speaker_parse(value: &str) -> Speaker {
-    if value == "others" {
-        Speaker::Others
-    } else {
-        Speaker::You
-    }
-}
-
 const SUMMARY_COLUMNS: &str =
     "m.id, m.title, m.started_at, m.duration_ms, m.status, m.system_audio,
     m.summary IS NOT NULL AND m.summary != '',
@@ -131,7 +116,7 @@ impl LearningStore {
                 meeting_id,
                 line.start_ms,
                 line.end_ms,
-                speaker_str(line.speaker),
+                line.speaker.as_str(),
                 line.text.trim()
             ],
         )?;
@@ -196,7 +181,7 @@ impl LearningStore {
                 Ok(TranscriptLine {
                     start_ms: row.get(0)?,
                     end_ms: row.get(1)?,
-                    speaker: speaker_parse(&row.get::<_, String>(2)?),
+                    speaker: Speaker::parse(&row.get::<_, String>(2)?),
                     text: row.get(3)?,
                 })
             })?
@@ -224,7 +209,7 @@ impl LearningStore {
             .map(|l| MeetingLine {
                 start_ms: l.start_ms,
                 end_ms: l.end_ms,
-                speaker: speaker_str(l.speaker).to_string(),
+                speaker: l.speaker.as_str().to_string(),
                 text: l.text,
             })
             .collect();

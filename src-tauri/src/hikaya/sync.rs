@@ -280,10 +280,7 @@ impl LearningStore {
                 .map(|l| MeetingLineRecord {
                     start_ms: l.start_ms,
                     end_ms: l.end_ms,
-                    speaker: match l.speaker {
-                        hikaya_core::meeting::Speaker::You => "you".into(),
-                        hikaya_core::meeting::Speaker::Others => "others".into(),
-                    },
+                    speaker: l.speaker.as_str().into(),
                     text: l.text,
                 })
                 .collect();

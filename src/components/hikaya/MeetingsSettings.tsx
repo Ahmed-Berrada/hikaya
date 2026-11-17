@@ -94,6 +94,7 @@ const Detail: React.FC<{ id: number; onBack: () => void }> = ({
   const speakers = {
     you: t("hikaya.meetings.speakers.you"),
     others: t("hikaya.meetings.speakers.others"),
+    room: t("hikaya.meetings.speakers.room"),
   };
 
   const exportText = async (format: ExportFormat) => {
@@ -141,6 +142,7 @@ const Detail: React.FC<{ id: number; onBack: () => void }> = ({
       id,
       speakers.you,
       speakers.others,
+      speakers.room,
     );
     setSummarizing(false);
     if (!failed("hikaya.meetings.errors.summary", result)) await load();

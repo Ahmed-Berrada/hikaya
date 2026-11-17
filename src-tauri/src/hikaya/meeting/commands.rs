@@ -86,10 +86,11 @@ pub async fn hikaya_meeting_summarize(
     id: i64,
     you: String,
     others: String,
+    room: String,
 ) -> Result<String, String> {
     let model = SummaryModel::from_settings(&crate::settings::get_settings(&app))?;
     let lines = store.meeting_lines(id).map_err(text_error)?;
-    let summary = summarize(&model, &lines, &SpeakerNames { you, others }).await?;
+    let summary = summarize(&model, &lines, &SpeakerNames { you, others, room }).await?;
     store
         .set_meeting_summary(id, &summary, model.name())
         .map_err(text_error)?;
@@ -102,6 +103,7 @@ pub async fn hikaya_meeting_summarize(
 pub struct ExportLabels {
     pub you: String,
     pub others: String,
+    pub room: String,
     pub summary: String,
     pub transcript: String,
     /// The meeting's start, already formatted for the user.
@@ -133,6 +135,7 @@ pub fn hikaya_meeting_export(
     let names = SpeakerNames {
         you: labels.you,
         others: labels.others,
+        room: labels.room,
     };
     Ok(match format {
         ExportFormat::Markdown => to_markdown(&MeetingExport {

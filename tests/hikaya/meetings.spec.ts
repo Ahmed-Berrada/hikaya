@@ -101,6 +101,31 @@ test.describe("Meetings screen", () => {
       ]);
   });
 
+  test("a phone recording shows its speaker as Room", async ({ page }) => {
+    await mockTauri(page, {
+      meetings: [
+        {
+          ...PAST,
+          id: 2,
+          title: "Café avec Sam",
+          system_audio: false,
+          lines: [
+            {
+              start_ms: 0,
+              end_ms: 30000,
+              speaker: "room",
+              text: "On se retrouve jeudi.",
+            },
+          ],
+        },
+      ],
+    });
+    await openMeetings(page);
+    await page.getByRole("button", { name: /Café avec Sam/ }).click();
+    await expect(page.getByText("Room:")).toBeVisible();
+    await expect(page.getByText("On se retrouve jeudi.")).toBeVisible();
+  });
+
   test("renames and deletes a meeting after confirmation", async ({ page }) => {
     await mockTauri(page, { meetings: [PAST] });
     await openMeetings(page);
