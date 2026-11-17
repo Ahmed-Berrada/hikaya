@@ -43,15 +43,16 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
 
 ## Phases
 
-Status as of 2026-11-16: v0.1–v0.3 are built and tested on Linux, and v0.2.0 is the first release
-for Windows testing. The hub runs on the owner's home server. Meetings are next.
+Status as of 2026-11-17: v0.1–v0.4 are built and tested on Linux; 0.3.1 is the build waiting for
+the first Windows test. The hub runs on the owner's home server. Model accuracy is measured in
+[BASELINE.md](BASELINE.md).
 
 ### v0.1: Dictation baseline (done)
 
 - Upstream Handy, rebranded, with EN/FR defaults and Ollama post-processing presets.
 - Windows build from CI. Daily use, with issues filed for anything that gets in the way.
 
-### v0.2: Learning loop (mostly done, in 0.2.0)
+### v0.2: Learning loop (done)
 
 - Personal dictionary that biases the STT prompt and the LLM cleanup.
 - Correction mining: edit a past dictation, a word-level diff is stored, and a substitution seen
@@ -59,8 +60,8 @@ for Windows testing. The hub runs on the owner's home server. Meetings are next.
 - Recent corrections become few-shot examples for cleanup. Stats page (WPM, top corrections).
 
 Done: correction mining, rule proposals, replacement rules, EN+FR filler removal, the mixed-language
-cleanup prompt with a guard against translation. Left: few-shot examples from corrections, the
-stats page, and aliases for the custom-words dictionary (Handy's own custom words are used as is).
+cleanup prompt with a guard against translation, the user's vocabulary (custom words and rule
+replacements) in that prompt, and the stats panel. Left: aliases for the custom-words dictionary.
 
 ### v0.3: Hub, vault and sync (mostly done, in 0.2.0)
 
@@ -76,7 +77,7 @@ viewer, encrypted snapshots in the nightly backup, Docker deployment on the home
 syncing the custom-words dictionary, and `age` encryption for audio (no audio is synced yet; it
 comes with meetings).
 
-### v0.4: Meetings (first version built)
+### v0.4: Meetings (done, pending the Windows check)
 
 - Mic and system loopback recorded as separate tracks (you vs. others), written to disk continuously
   so a crash doesn't lose the recording.
@@ -87,8 +88,8 @@ comes with meetings).
 
 Done: two tracks (WASAPI loopback on Windows, PipeWire monitor on Linux), crash-safe segments,
 transcription while recording, echo removal, summaries with the configured provider, Markdown and
-SRT export, consent reminder (ADR 0003), and sync to the hub as text. Left: speakers beyond
-You/Others, a tray indicator, audio retention, and the Windows hand check.
+SRT export, consent reminder (ADR 0003), sync to the hub as text, audio retention, and a tray line
+with Stop. Left: speakers beyond You/Others, and the Windows hand check.
 
 ### v0.5: Phone capture (viewing done)
 
