@@ -232,3 +232,41 @@ footer {
 #meeting-lines .speaker.you {
   color: var(--accent);
 }
+
+#recorder label {
+  display: block;
+}
+button.record {
+  width: 100%;
+  margin-top: 12px;
+  padding: 18px;
+  font-size: 1.1rem;
+  background: var(--danger);
+  color: white;
+  border: none;
+}
+button.record.on {
+  background: var(--text);
+  color: var(--bg);
+}
+#recorder h3 {
+  font-size: 1rem;
+  margin: 16px 0 4px;
+}
+#rec-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+#rec-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+#rec-list .title {
+  font-weight: 600;
+}
+#rec-list .actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
