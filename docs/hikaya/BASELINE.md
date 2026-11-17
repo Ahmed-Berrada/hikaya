@@ -9,20 +9,22 @@ Intel i7-10510U (4 cores), 24 GB RAM, models in Q8_0. The first 40 clips of the 
 language (read Wikipedia sentences). WER: lower is better. Speed: seconds of audio transcribed per
 second; above 1 is faster than real time. Language left on **auto**, as for a user who speaks both.
 
-| Model                  | Size   | French WER | English WER | Speed    | Notes                                        |
-| ---------------------- | ------ | ---------- | ----------- | -------- | -------------------------------------------- |
-| Parakeet TDT 0.6B v3   | 740 MB | **5.6%**   | 5.1%        | 4.8×     | Best balance on CPU                          |
-| Qwen3-ASR 0.6B         | 850 MB | 9.0%       | **3.9%**    | 1.6×     | Best English, weaker French                  |
-| Whisper large-v3-turbo | 886 MB | 9.2%       | 4.2%        | 0.2–0.4× | 10 clips only; on CPU (see below)            |
-| Whisper small          | 270 MB | 13.7%      | 7.1%        | 1.5×     |                                              |
-| Whisper base           | 85 MB  | 28.4%      | 10.4%       | 4.6×     | Too weak for French                          |
-| Canary 180M Flash      | 218 MB | 94.6%      | 10.7%       | 6.6×     | Translates French to English on auto (below) |
+| Model                  | Size   | French WER | English WER | Speed    | Notes                                       |
+| ---------------------- | ------ | ---------- | ----------- | -------- | ------------------------------------------- |
+| Parakeet TDT 0.6B v3   | 740 MB | **5.6%**   | 5.1%        | 4.8×     | Best balance on CPU                         |
+| Qwen3-ASR 0.6B         | 850 MB | 9.0%       | **3.9%**    | 1.6×     | Best English, weaker French                 |
+| Whisper large-v3-turbo | 886 MB | 9.2%       | 4.2%        | 0.2–0.4× | 10 clips only; on CPU (see below)           |
+| Whisper small          | 270 MB | 13.7%      | 7.1%        | 1.5×     |                                             |
+| Whisper base           | 85 MB  | 28.4%      | 10.4%       | 4.6×     | Too weak for French                         |
+| Canary 180M Flash      | 218 MB | 94.6%      | 10.7%       | 6.6×     | Needs the language detector on auto (below) |
 
 ### Findings
 
-- **Canary translates on "auto".** It does not detect the language; on auto it writes English, so
-  French comes out translated. Told the language is French, it scores **7.8%** at 5.2×. It must
-  not be the default for someone who speaks both languages.
+- **Canary translates French on "auto" without the language detector.** Canary cannot tell the
+  language itself; Handy covers that with a separate, downloadable language detector, which the
+  test setup did not have. Without it, Canary writes English, so French comes out translated. Told
+  the language is French, it scores **7.8%** at 5.2×. So Canary is only safe for a bilingual user
+  once the detector is installed; Hikaya should not recommend it otherwise.
 - **Whisper large-v3-turbo produced gibberish on the home server's Intel GPU** (Vulkan on Intel
   UHD 620): over 100% WER, such as "visit your for". On the CPU of the same machine it is accurate.
   The RTX laptop uses a different GPU and driver; check it there before trusting it.
