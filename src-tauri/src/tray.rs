@@ -72,6 +72,8 @@ struct MenuInputs {
     update_checks_enabled: bool,
     /// The language submenu, when the selected model has languages to pick.
     language: Option<LanguageMenu>,
+    /// Hikaya: a meeting is being recorded.
+    meeting: bool,
 }
 
 /// What the language submenu shows: `(code, name)` entries, with codes as
@@ -394,6 +396,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
             language,
+            meeting: crate::hikaya::meeting_in_progress(app),
         },
     }
 }
@@ -772,6 +775,23 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     // right below the version line so they're the first actionable thing seen.
     let mut tooltip = version_label;
     let mut position = 2;
+    // Hikaya: show that a meeting is being recorded, with a way to stop it.
+    if inputs.meeting {
+        let stop = MenuItem::with_id(
+            app,
+            "hikaya_stop_meeting",
+            crate::hikaya::tray_meeting_label(&inputs.locale),
+            true,
+            None::<&str>,
+        )?;
+        menu.insert(&stop, position)?;
+        position += 1;
+        tooltip = format!(
+            "{} — {}",
+            tooltip,
+            crate::hikaya::tray_meeting_tooltip(&inputs.locale)
+        );
+    }
     if let Some(warning_item) = secure_input_warning {
         menu.insert(&warning_item, position)?;
         position += 1;
@@ -989,7 +1009,21 @@ mod tests {
             locale: "en".to_string(),
             update_checks_enabled: true,
             language: None,
+            meeting: false,
         }
+    }
+
+    #[test]
+    fn a_recording_meeting_changes_the_menu() {
+        let idle = inputs(false);
+        let meeting = MenuInputs {
+            meeting: true,
+            ..inputs(false)
+        };
+        assert_ne!(
+            idle, meeting,
+            "the menu must be rebuilt when a meeting starts"
+        );
     }
 
     #[test]

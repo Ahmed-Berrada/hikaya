@@ -27,6 +27,34 @@ pub fn learning_store() -> Option<&'static Arc<LearningStore>> {
 }
 use tauri::{AppHandle, Manager};
 
+/// Whether a meeting is being recorded, for the tray.
+pub fn meeting_in_progress(app: &AppHandle) -> bool {
+    app.try_state::<Arc<meeting::manager::MeetingManager>>()
+        .is_some_and(|meetings| meetings.active().is_some())
+}
+
+fn is_french(locale: &str) -> bool {
+    locale.to_lowercase().starts_with("fr")
+}
+
+/// The tray line shown while a meeting records; clicking it stops it.
+pub fn tray_meeting_label(locale: &str) -> &'static str {
+    if is_french(locale) {
+        "● Réunion en cours d'enregistrement — Arrêter"
+    } else {
+        "● Recording a meeting — Stop"
+    }
+}
+
+/// Added to the tray tooltip while a meeting records.
+pub fn tray_meeting_tooltip(locale: &str) -> &'static str {
+    if is_french(locale) {
+        "réunion en cours d'enregistrement"
+    } else {
+        "recording a meeting"
+    }
+}
+
 /// Starts or stops a meeting, as `--toggle-meeting` asks.
 pub fn toggle_meeting(app: &AppHandle) {
     let Some(meetings) = app.try_state::<Arc<meeting::manager::MeetingManager>>() else {
@@ -63,4 +91,24 @@ pub fn init(app: &AppHandle) {
     }
     app.manage(meetings);
     sync_worker::start(app, store);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tray_meeting_text_follows_the_app_language() {
+        assert_eq!(
+            tray_meeting_label("fr"),
+            "● Réunion en cours d'enregistrement — Arrêter"
+        );
+        assert_eq!(tray_meeting_label("fr-CA"), tray_meeting_label("fr"));
+        assert_eq!(tray_meeting_label("en"), "● Recording a meeting — Stop");
+        assert_eq!(tray_meeting_label("de"), tray_meeting_label("en"));
+        assert_eq!(
+            tray_meeting_tooltip("FR"),
+            "réunion en cours d'enregistrement"
+        );
+    }
 }
