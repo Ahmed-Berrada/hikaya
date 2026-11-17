@@ -222,6 +222,7 @@ impl MeetingManager {
         });
         drop(running);
         Self::emit(&self.app, id);
+        crate::tray::update_tray_menu(&self.app);
         Ok(info)
     }
 
@@ -236,6 +237,7 @@ impl MeetingManager {
         for track in running.tracks {
             track.stop();
         }
+        crate::tray::update_tray_menu(&self.app);
         self.store
             .set_meeting_status(id, MeetingStatus::Transcribing, elapsed)?;
         Self::emit(&self.app, id);

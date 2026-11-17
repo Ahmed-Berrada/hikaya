@@ -329,6 +329,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 transcription_manager.request_unload();
                 log::info!("Model unloaded via tray.");
             }
+            "hikaya_stop_meeting" => {
+                hikaya::toggle_meeting(app);
+            }
             "cancel" => {
                 use crate::utils::cancel_current_operation;
 
