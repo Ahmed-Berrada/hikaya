@@ -3,7 +3,7 @@
 How well each speech model transcribes French and English, measured with
 [`eval/wer/run.py`](../../eval/wer/README.md) through the real app.
 
-## Home server, CPU (2026-11-16)
+## Home server, CPU (2026-11-16, Parakeet Ultra added 2026-11-17)
 
 Intel i7-10510U (4 cores), 24 GB RAM, models in Q8_0. The first 40 clips of the FLEURS test set per
 language (read Wikipedia sentences). WER: lower is better. Speed: seconds of audio transcribed per
@@ -11,7 +11,8 @@ second; above 1 is faster than real time. Language left on **auto**, as for a us
 
 | Model                  | Size   | French WER | English WER | Speed    | Notes                                       |
 | ---------------------- | ------ | ---------- | ----------- | -------- | ------------------------------------------- |
-| Parakeet TDT 0.6B v3   | 740 MB | **5.6%**   | 5.1%        | 4.8×     | Best balance on CPU                         |
+| Parakeet Ultra         | 740 MB | **5.1%**   | 4.6%        | 4.6×     | **Default**: best accuracy for the speed    |
+| Parakeet TDT 0.6B v3   | 740 MB | 5.6%       | 5.1%        | 4.8×     | Close second                                |
 | Qwen3-ASR 0.6B         | 850 MB | 9.0%       | **3.9%**    | 1.6×     | Best English, weaker French                 |
 | Whisper large-v3-turbo | 886 MB | 9.2%       | 4.2%        | 0.2–0.4× | 10 clips only; on CPU (see below)           |
 | Whisper small          | 270 MB | 13.7%      | 7.1%        | 1.5×     |                                             |
@@ -33,11 +34,15 @@ second; above 1 is faster than real time. Language left on **auto**, as for a us
 
 ### Recommendation
 
-- **Default for an English + French speaker: Parakeet TDT 0.6B v3.** It is the most accurate in
-  French, close to the best in English, detects the language itself, and runs near five times real
-  time even on this CPU.
+- **Default for an English + French speaker: Parakeet Ultra.** The most accurate in French and
+  close to the best in English, at the same speed and size as Parakeet TDT 0.6B v3, and it detects
+  the language itself. It is also what the app's setup already recommends for these two languages
+  (the model package's "best" pick), so new installs land on it without any change.
 - **For English-heavy use:** Qwen3-ASR 0.6B.
-- **On a strong GPU:** compare Whisper large-v3-turbo and Parakeet on the laptop before choosing.
+- **On a strong GPU:** compare Whisper large-v3-turbo and Parakeet Ultra on the laptop before
+  choosing.
+- Accuracy keeps improving with use through the learning loop (rules and vocabulary), which
+  works with any model.
 
 ## RTX 4070 laptop
 
