@@ -230,3 +230,109 @@ test("is in French for a French browser", async ({ browser }) => {
   ).toBeVisible();
   await context.close();
 });
+
+test("records on the phone, and a computer turns it into a meeting", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000);
+  // The test before locks the hub after a wrong passphrase; unlock it once
+  // the wait it imposes is over.
+  await expect
+    .poll(
+      async () => {
+        const status = await (await request.get("/api/status")).json();
+        if (status.state === "unlocked") return "unlocked";
+        const response = await request.post("/api/unlock", {
+          data: { passphrase: PASSPHRASE },
+        });
+        return response.ok() ? "unlocked" : String(response.status());
+      },
+      { timeout: 15_000 },
+    )
+    .toBe("unlocked");
+  await pair(page, "recorder");
+  await page.getByRole("tab", { name: "Record" }).click();
+  await page.getByLabel("Title (optional)").fill("Café avec Sam");
+  await page.getByRole("button", { name: "● Start recording" }).click();
+  await expect(page.locator("#rec-status")).toContainText("Recording");
+  await expect(page.locator("#rec-list li").first()).toContainText(
+    "Café avec Sam",
+  );
+  // A little more than two chunks of audio.
+  await page.waitForTimeout(11_000);
+  await page.getByRole("button", { name: "■ Stop" }).click();
+  await expect(page.locator("#rec-status")).toHaveText(
+    "Everything is uploaded.",
+    { timeout: 20_000 },
+  );
+  await expect(page.locator("#rec-list li").first()).toContainText(
+    "Waiting for your computer",
+  );
+
+  // The computer's side, as the desktop app does it.
+  const { token } = await (
+    await request.post("/api/devices", {
+      data: { passphrase: PASSPHRASE, name: "gpu laptop" },
+    })
+  ).json();
+  const auth = { authorization: `Bearer ${token}` };
+  const claimed = await request.post("/api/recordings/claim", {
+    headers: auth,
+  });
+  expect(claimed.status()).toBe(200);
+  const recording = await claimed.json();
+  expect(recording.title).toBe("Café avec Sam");
+  expect(recording.chunks).toBeGreaterThanOrEqual(2);
+  const audio = await request.get(`/api/recordings/${recording.id}/audio`, {
+    headers: auth,
+  });
+  const bytes = await audio.body();
+  expect(bytes.length).toBe(recording.bytes);
+  // A whole file: WebM's EBML magic or MP4's ftyp box at the start.
+  const webm = bytes.subarray(0, 4).toString("hex") === "1a45dfa3";
+  const mp4 = bytes.subarray(4, 8).toString("latin1") === "ftyp";
+  expect(webm || mp4).toBeTruthy();
+
+  const pushed = await request.post("/api/sync/push", {
+    headers: auth,
+    data: {
+      meetings: [
+        {
+          id: "from-phone",
+          title: recording.title,
+          started_at: recording.created_at,
+          duration_ms: 11_000,
+          updated_at: Date.now(),
+          summary: null,
+          lines: [
+            {
+              start_ms: 0,
+              end_ms: 11_000,
+              speaker: "room",
+              text: "On se retrouve jeudi.",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(pushed.ok()).toBeTruthy();
+  const completed = await request.post(
+    `/api/recordings/${recording.id}/complete`,
+    { headers: auth, data: { meeting_id: "from-phone" } },
+  );
+  expect(completed.ok()).toBeTruthy();
+
+  await page.getByRole("tab", { name: "Meetings" }).click();
+  await page.getByRole("tab", { name: "Record" }).click();
+  const done = page.locator("#rec-list li").first();
+  await expect(done).toContainText("Transcribed");
+  await done.getByRole("button", { name: "Open" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Café avec Sam" }),
+  ).toBeVisible();
+  await expect(page.locator("#meeting-lines")).toContainText(
+    "Room:On se retrouve jeudi.",
+  );
+});
