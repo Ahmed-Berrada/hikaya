@@ -1,7 +1,0 @@
-<summaries>
-${summaries}
-</summaries>
-
-The above are summaries of consecutive parts of one long meeting, separated by "---". Merge them into one summary in Markdown, in the main language of the meeting, with exactly these sections, leaving out any that would be empty: "## TL;DR" (two or three sentences), "## Key points", "## Decisions", "## Action items" (as "- [ ] Who: what (when)"), "## Open questions".
-
-Remove repetitions. Keep every decision and action item. Only use what is in the summaries; never invent anything. Return only the Markdown.
