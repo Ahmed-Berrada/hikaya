@@ -119,6 +119,11 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
         data BLOB NOT NULL,
         PRIMARY KEY (recording_id, idx)
     );",
+    // Summaries the hub writes itself when a meeting arrives without one.
+    // Kept apart from `summary`, which belongs to the recording device.
+    "ALTER TABLE meetings ADD COLUMN hub_summary TEXT;
+    ALTER TABLE meetings ADD COLUMN hub_summary_model TEXT;
+    ALTER TABLE meetings ADD COLUMN hub_summary_tried_at INTEGER;",
 ];
 
 /// Brings the database to the current schema. Each migration and its version

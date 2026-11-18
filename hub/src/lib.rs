@@ -9,6 +9,7 @@ pub mod meetings;
 pub mod recordings;
 pub mod snapshot;
 pub mod state;
+pub mod summarizer;
 pub mod sync;
 pub mod vault;
 pub mod web;
