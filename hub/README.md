@@ -100,6 +100,13 @@ Open the hub's address in a browser on your tailnet, for example on your iPhone:
 search every dictation, read meetings with their summaries, and unlock the hub after a reboot without the desktop app. In Safari, **Share
 → Add to Home Screen** makes it open like an app.
 
+**Record** records with the phone's microphone, for in-person meetings and voice notes. Keep the
+page open and the screen on until you press Stop: Safari pauses recording in the background. Audio
+is uploaded every few seconds and kept encrypted on the hub. The next time the Hikaya app syncs on
+your computer, it transcribes the recording, summarizes it if a provider is set up, and the
+meeting appears under Meetings everywhere; the hub then deletes the audio. Recording needs HTTPS
+(`tailscale serve`), as browsers only allow the microphone on secure pages.
+
 The browser keeps only its device token; revoke it like any other device. The page loads no
 outside resources and runs under a strict Content-Security-Policy.
 

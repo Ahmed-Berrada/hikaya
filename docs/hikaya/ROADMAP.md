@@ -91,10 +91,13 @@ transcription while recording, echo removal, summaries with the configured provi
 SRT export, consent reminder (ADR 0003), sync to the hub as text, audio retention, and a tray line
 with Stop. Left: speakers beyond You/Others, and the Windows hand check.
 
-### v0.5: Phone capture (viewing done)
+### v0.5: Phone capture (recording done)
 
 - Done: the hub's web viewer works on the iPhone (search, unlock, add to home screen).
-- PWA recorder with chunked upload to the hub.
+- Done: recording on the phone (ADR 0004). The viewer's Record tab uploads chunks while it
+  records; the hub keeps them encrypted; the desktop app transcribes them on its next sync as
+  **Room** lines, summarizes, and the hub then deletes the audio. Tested end to end on Linux
+  (`scripts/hikaya/e2e-phone.sh`); still to check on a real iPhone.
 - iOS Shortcut: record, send to the hub, copy the result to the clipboard.
 
 ## Evaluation data
