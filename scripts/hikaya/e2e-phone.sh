@@ -90,29 +90,40 @@ for key, value in (("hub_url", sys.argv[2]), ("hub_token", sys.argv[3]), ("devic
 db.commit()
 PY
 
-say "uploading a recording from the phone, in chunks"
 auth=(-H "authorization: Bearer $PHONE")
-ID="$(curl -fs -X POST "$HUB_URL/api/recordings" "${auth[@]}" -H 'content-type: application/json' \
-  -d '{"title":"Phone e2e","mime":"audio/wav"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
 split -b 100000 -d -a 3 "$CACHE/jfk.wav" "$WORK/chunk-"
-count=0
-for chunk in "$WORK"/chunk-*; do
-  curl -fs -X PUT "$HUB_URL/api/recordings/$ID/chunks/$count" "${auth[@]}" \
-    -H 'content-type: application/octet-stream' --data-binary "@$chunk" || die "chunk $count was refused"
-  count=$((count + 1))
-done
-curl -fs -X POST "$HUB_URL/api/recordings/$ID/finish" "${auth[@]}" -H 'content-type: application/json' \
-  -d "{\"chunks\":$count}" >/dev/null || die "the hub did not accept the finished recording"
-echo "   recording $ID: $count chunks"
+# Uploads jfk.wav as the phone's viewer does, in chunks; prints the id.
+upload() {
+  local id count=0
+  id="$(curl -fs -X POST "$HUB_URL/api/recordings" "${auth[@]}" -H 'content-type: application/json' \
+    -d "{\"title\":\"$1\",\"mime\":\"audio/wav\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
+  for chunk in "$WORK"/chunk-*; do
+    curl -fs -X PUT "$HUB_URL/api/recordings/$id/chunks/$count" "${auth[@]}" \
+      -H 'content-type: application/octet-stream' --data-binary "@$chunk" || die "chunk $count was refused"
+    count=$((count + 1))
+  done
+  curl -fs -X POST "$HUB_URL/api/recordings/$id/finish" "${auth[@]}" -H 'content-type: application/json' \
+    -d "{\"chunks\":$count}" >/dev/null || die "the hub did not accept the finished recording"
+  echo "$id"
+}
+# Waits up to $2 seconds for recording $1 to be done; prints "status chunks meeting".
+wait_done() {
+  local state=""
+  for _ in $(seq 1 "$2"); do
+    state="$(curl -fs "$HUB_URL/api/recordings/$1" "${auth[@]}" | python3 -c 'import sys,json;r=json.load(sys.stdin);print(r["status"], r["chunks"], r["meeting_id"] or "")')"
+    [[ "$state" == done* ]] && break
+    sleep 1
+  done
+  echo "$state"
+}
+
+say "uploading a recording from the phone, in chunks"
+ID="$(upload "Phone e2e")"
+echo "   recording $ID"
 
 say "starting the app; its first sync should take the recording"
 start_app
-state=""
-for _ in $(seq 1 180); do
-  state="$(curl -fs "$HUB_URL/api/recordings/$ID" "${auth[@]}" | python3 -c 'import sys,json;r=json.load(sys.stdin);print(r["status"], r["chunks"], r["meeting_id"] or "")')"
-  [[ "$state" == done* ]] && break
-  sleep 1
-done
+state="$(wait_done "$ID" 180)"
 [[ "$state" == done* ]] || { grep -iE "phone|hub|error" "$WORK/app.log" | tail -10; die "the recording was not completed (state: $state)"; }
 read -r status chunks meeting <<<"$state"
 [[ "$chunks" == 0 ]] || die "the hub kept the audio after completing"
@@ -130,3 +141,9 @@ lower="$(printf '%s' "$detail" | tr '[:upper:]' '[:lower:]')"
 [[ "$lower" == *'"speaker":"room"'* ]] || die "the lines are not labelled room"
 [[ "$lower" == *"ask not what your country"* ]] || die "the transcript is missing the speech"
 say "PASS: the phone's recording was transcribed by the app and is on the hub"
+
+say "a second recording while the app runs: the quick check should take it within a minute"
+SECOND="$(upload "Second note")"
+state="$(wait_done "$SECOND" 90)"
+[[ "$state" == done* ]] || { grep -iE "phone|error" "$WORK/app.log" | tail -5; die "the second recording waited for the 5-minute sync (state: $state)"; }
+say "PASS: a recording sent while the app runs is transcribed without waiting for the full sync"
