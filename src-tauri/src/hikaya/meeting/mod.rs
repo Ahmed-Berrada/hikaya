@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod manager;
+pub mod phone;
 pub mod retention;
 pub mod segments;
 pub mod store;

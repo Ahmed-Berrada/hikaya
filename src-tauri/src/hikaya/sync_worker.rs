@@ -58,6 +58,9 @@ pub struct SyncWorker {
     wake: Notify,
     last: Mutex<(SyncState, Option<String>)>,
     running: tokio::sync::Mutex<()>,
+    /// Set in the app (not in tests): lets a good sync look for phone
+    /// recordings to transcribe.
+    app: Option<AppHandle>,
 }
 
 impl SyncWorker {
@@ -71,6 +74,7 @@ impl SyncWorker {
             wake: Notify::new(),
             last: Mutex::new((state, None)),
             running: tokio::sync::Mutex::new(()),
+            app: None,
         }
     }
 
@@ -133,6 +137,9 @@ impl SyncWorker {
                     );
                 }
                 self.set(SyncState::UpToDate, None);
+                if let Some(app) = &self.app {
+                    super::meeting::phone::check(app, &config);
+                }
             }
             Err(error) => {
                 log::warn!("Hub sync did not complete: {error}");
@@ -321,7 +328,9 @@ pub async fn unlock(app: &AppHandle, passphrase: &str) -> Result<SyncStatus, Str
 
 /// Starts the worker. Call once at startup, after the store is managed.
 pub fn start(app: &AppHandle, store: Arc<LearningStore>) {
-    let worker = Arc::new(SyncWorker::new(store));
+    let mut worker = SyncWorker::new(store);
+    worker.app = Some(app.clone());
+    let worker = Arc::new(worker);
     app.manage(worker.clone());
     tauri::async_runtime::spawn(async move {
         // Give startup a moment before the first run.
