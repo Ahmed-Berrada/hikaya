@@ -110,6 +110,28 @@ meeting appears under Meetings everywhere; the hub then deletes the audio. Recor
 The browser keeps only its device token; revoke it like any other device. The page loads no
 outside resources and runs under a strict Content-Security-Policy.
 
+## Summaries on the hub (optional)
+
+Your computer summarizes meetings with its own AI provider. When a meeting reaches the hub without
+a summary (no provider set up, or nobody pressed Summarize), the hub can write one with a local
+[Ollama](https://ollama.com) model after 30 minutes. It is shown with the note "written by the
+hub". If the computer sends its own summary later, that one is shown instead.
+
+With Ollama in a Docker container named `ollama` on the same machine:
+
+```bash
+docker network create hikaya-ai
+docker network connect hikaya-ai ollama
+docker exec ollama ollama pull qwen3:4b-instruct
+HIKAYA_HUB_DATA_DIR=$HOME/hikaya-data docker compose -f hub/compose.yaml -f hub/compose.ollama.yaml up -d --build
+```
+
+Without Docker, set `HIKAYA_HUB_OLLAMA_URL` (for example `http://127.0.0.1:11434`). Other settings:
+`HIKAYA_HUB_OLLAMA_MODEL` (default `qwen3:4b-instruct`) and `HIKAYA_HUB_SUMMARY_DELAY_MINUTES`
+(default 30). On a laptop CPU a 4B model takes about five minutes per meeting; the hub does one
+at a time, checks every five minutes, and waits a day before retrying a failed one. The transcript
+never leaves the machine.
+
 ## Backups
 
 While unlocked, the hub writes a consistent snapshot of its database to `snapshots/` every
