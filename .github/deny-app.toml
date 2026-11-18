@@ -1,0 +1,23 @@
+# cargo-deny settings for the desktop app (src-tauri), checked for security
+# advisories only. Licenses are Handy's choice and are not checked here.
+[advisories]
+yanked = "warn"
+# Many unmaintained crates come with Tauri and GTK; they are tracked upstream.
+unmaintained = "none"
+# Each ignore needs a reason, and goes away when the dependency moves.
+ignore = [
+  # zip 4 comes with tauri-plugin-updater (every 2.x up to 2.14 uses it). The
+  # updater only extracts an update after checking its minisign signature
+  # against Hikaya's key, so an attacker cannot hand it a crafted archive.
+  { id = "RUSTSEC-2026-0367", reason = "zip via the updater; archives are signature-checked first" },
+  { id = "RUSTSEC-2026-0368", reason = "zip via the updater; archives are signature-checked first" },
+  { id = "RUSTSEC-2026-0369", reason = "zip via the updater; archives are signature-checked first" },
+  { id = "RUSTSEC-2026-0429", reason = "zip via the updater; archives are signature-checked first" },
+  { id = "RUSTSEC-2026-0545", reason = "zip via the updater; no encrypted archives are read" },
+  { id = "RUSTSEC-2026-0548", reason = "zip via the updater; archives are signature-checked first" },
+  # quick-xml 0.38 comes with plist (macOS bundling) and wayland-scanner
+  # (build-time code generation from the system's protocol files); neither
+  # parses XML from outside the machine.
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml only parses local build and plist files" },
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml only parses local build and plist files" },
+]

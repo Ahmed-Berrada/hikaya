@@ -14,6 +14,8 @@ on:
       - "src/hikaya/**"
       - "src/components/hikaya/**"
       - "tests/hikaya/**"
+      - "src-tauri/Cargo.lock"
+      - ".github/deny-app.toml"
       - ".github/workflows/hikaya.yml"
   pull_request:
     paths:
@@ -23,6 +25,8 @@ on:
       - "src/hikaya/**"
       - "src/components/hikaya/**"
       - "tests/hikaya/**"
+      - "src-tauri/Cargo.lock"
+      - ".github/deny-app.toml"
       - ".github/workflows/hikaya.yml"
 
 concurrency:
@@ -207,3 +211,17 @@ jobs:
           manifest-path: ${{ matrix.crate }}/Cargo.toml
           command: check
           arguments: --config ${{ matrix.crate }}/deny.toml
+
+  # The desktop app's dependencies come mostly from Handy and Tauri. Only
+  # security advisories are checked; see .github/deny-app.toml.
+  app-advisories:
+    name: advisories (desktop app)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: src-tauri/Cargo.toml
+          command: check advisories
+          arguments: --config .github/deny-app.toml
