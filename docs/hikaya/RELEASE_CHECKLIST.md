@@ -52,6 +52,16 @@ Open Notepad and use the transcribe shortcut.
 - [ ] Save as Markdown and as SRT; open both files.
 - [ ] Dictate while a meeting records: dictation still works, and the meeting goes on.
 
+## Recording on the iPhone (only with the hub)
+
+- [ ] On the iPhone, open the hub page → Record. Allow the microphone, record a minute of talk in
+      French and English, Stop. "Everything is uploaded." then "Waiting for your computer".
+- [ ] On the laptop, with Hikaya running and connected: within five minutes (or after Sync now) the
+      recording shows "Transcribed" on the phone, and the meeting is in Meetings on both, with
+      **Room** lines and a summary if Ollama runs.
+- [ ] Lock the iPhone screen during a recording, unlock it: the recording shows "Interrupted" or
+      continues; "Send what was saved" turns what was uploaded into a meeting.
+
 ## Sync with the hub (only if Tailscale is running on this machine)
 
 - [ ] Sync → address `https://<hub>.<tailnet>.ts.net`, a device name, the hub passphrase → Connect.
