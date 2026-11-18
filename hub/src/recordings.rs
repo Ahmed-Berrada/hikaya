@@ -420,6 +420,60 @@ pub fn retry(conn: &Connection, id: &str) -> Result<RecordingView, RecordingErro
     require(conn, id)
 }
 
+/// A whole short recording in one request, for an iOS Shortcut: creates
+/// it, stores the audio as its only chunk and marks it ready.
+pub fn upload_whole(
+    conn: &mut Connection,
+    device: i64,
+    title: &str,
+    mime: &str,
+    data: &[u8],
+) -> Result<RecordingView, RecordingError> {
+    let created = create(conn, device, title, mime)?;
+    if let Err(error) = put_chunk(conn, device, &created.id, 0, data) {
+        let _ = delete(conn, &created.id);
+        return Err(error);
+    }
+    finish(conn, device, &created.id, 1)
+}
+
+/// Where a recording's transcript is, for a Shortcut polling for it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct RecordingText {
+    pub status: String,
+    /// The transcript as one paragraph, once done.
+    pub text: Option<String>,
+    pub error: Option<String>,
+}
+
+/// The transcript of a recording, without timestamps or speakers.
+pub fn text(conn: &Connection, id: &str) -> Result<RecordingText, RecordingError> {
+    let recording = require(conn, id)?;
+    let text = match (&recording.status[..], &recording.meeting_id) {
+        ("done", Some(meeting)) => {
+            let found = crate::meetings::detail(conn, meeting)?;
+            Some(
+                found
+                    .map(|m| {
+                        m.lines
+                            .iter()
+                            .map(|l| l.text.trim())
+                            .filter(|t| !t.is_empty())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .unwrap_or_default(),
+            )
+        }
+        _ => None,
+    };
+    Ok(RecordingText {
+        status: recording.status,
+        text,
+        error: recording.error,
+    })
+}
+
 /// Deletes a recording and its audio. The meeting made from it stays.
 pub fn delete(conn: &mut Connection, id: &str) -> Result<(), RecordingError> {
     let tx = conn.transaction().context("starting a transaction")?;
@@ -611,6 +665,43 @@ mod tests {
             audio(&conn, laptop, &id),
             Err(RecordingError::Conflict(_))
         ));
+    }
+
+    #[test]
+    fn a_shortcut_uploads_in_one_go_and_reads_back_plain_text() {
+        let (mut conn, phone, laptop) = setup();
+        let r = upload_whole(&mut conn, phone, "Note", "audio/mp4", b"m4a").expect("upload");
+        assert_eq!(r.status, "pending");
+        let waiting = text(&conn, &r.id).expect("text");
+        assert_eq!(waiting.status, "pending");
+        assert_eq!(waiting.text, None);
+
+        claim(&conn, laptop).expect("claim").expect("waiting");
+        conn.execute(
+            "INSERT INTO meetings (id, device_id, title, started_at, duration_ms, updated_at,
+               lines_json, transcript, line_count, received_at)
+             VALUES ('m1', ?1, 'Note', 0, 0, 0, ?2, '', 2, 0)",
+            params![
+                laptop,
+                r#"[{"start_ms":0,"end_ms":30000,"speaker":"room","text":"Acheter du pain."},
+                    {"start_ms":30000,"end_ms":40000,"speaker":"room","text":" And milk. "}]"#
+            ],
+        )
+        .expect("meeting");
+        complete(&mut conn, laptop, &r.id, "m1").expect("complete");
+        let done = text(&conn, &r.id).expect("text");
+        assert_eq!(done.status, "done");
+        assert_eq!(done.text.as_deref(), Some("Acheter du pain. And milk."));
+
+        assert!(matches!(
+            upload_whole(&mut conn, phone, "Note", "audio/mp4", b""),
+            Err(RecordingError::Invalid(_))
+        ));
+        assert_eq!(
+            list(&conn, 10).expect("list").len(),
+            1,
+            "a refused upload leaves nothing"
+        );
     }
 
     #[test]
