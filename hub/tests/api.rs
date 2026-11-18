@@ -738,3 +738,41 @@ async fn recordings_need_a_token_and_a_known_audio_type() {
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn a_shortcut_uploads_a_voice_note_and_polls_for_its_text() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, phone) = hub.device("shortcut").await;
+    let request = Request::builder()
+        .method("POST")
+        .uri("/api/recordings/upload?title=Courses")
+        .header("authorization", format!("Bearer {phone}"))
+        .header("content-type", "audio/mp4")
+        .body(Body::from(&b"m4a bytes"[..]))
+        .expect("request");
+    let response = hub.app.clone().oneshot(request).await.expect("response");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let bytes = response
+        .into_body()
+        .collect()
+        .await
+        .expect("body")
+        .to_bytes();
+    let created: Value = serde_json::from_slice(&bytes).expect("json");
+    assert_eq!(created["title"], "Courses");
+    assert_eq!(created["status"], "pending");
+    let id = created["id"].as_str().expect("id");
+
+    let (status, body) = hub
+        .call(
+            "GET",
+            &format!("/api/recordings/{id}/text"),
+            Some(&phone),
+            None,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "pending");
+    assert_eq!(body["text"], Value::Null);
+}
