@@ -43,8 +43,8 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
 
 ## Phases
 
-Status as of 2026-11-17: v0.1–v0.4 are built and tested on Linux; 0.3.1 is the build waiting for
-the first Windows test. The hub runs on the owner's home server. Model accuracy is measured in
+Status as of 2026-11-18: v0.1–v0.4 and phone recording (v0.5) are built and tested on Linux; 0.4.0
+is the build waiting for the first Windows test. The hub runs on the owner's home server. Model accuracy is measured in
 [BASELINE.md](BASELINE.md).
 
 ### v0.1: Dictation baseline (done)
