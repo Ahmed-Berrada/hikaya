@@ -4,7 +4,7 @@ ${transcript}
 
 The above is the transcript of a meeting, possibly in English, French or both. "You" is the person who recorded it and "Others" the people on the other end of a call; "Room" is everyone in a room recorded on one phone, so it can be several people. The transcript comes from speech recognition and may contain mistakes.
 
-Write a summary in Markdown, in the main language of the meeting, with exactly these sections. Leave out a section that would be empty.
+Write a summary in Markdown, in ${language}, with exactly these sections. Keep the section titles below as they are. Leave out a section that would be empty.
 
 ## TL;DR
 Two or three sentences: what the meeting was about and what came out of it.

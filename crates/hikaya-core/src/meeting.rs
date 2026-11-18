@@ -166,15 +166,32 @@ pub const SUMMARY_PART_CHARS: usize = 12_000;
 /// The requests that summarize a meeting: one per part of the transcript.
 /// When there are several, their answers go to [`merge_prompt`].
 pub fn summary_prompts(lines: &[TranscriptLine], names: &SpeakerNames) -> Vec<String> {
+    let language = summary_language(lines);
     split_for_summary(&plain_transcript(lines, names), SUMMARY_PART_CHARS)
         .into_iter()
-        .map(|part| SUMMARY_PROMPT.replace("${transcript}", &part))
+        .map(|part| {
+            SUMMARY_PROMPT
+                .replace("${language}", language)
+                .replace("${transcript}", &part)
+        })
         .collect()
 }
 
 /// The request that merges the summaries of a long meeting's parts.
-pub fn merge_prompt(summaries: &[String]) -> String {
-    MERGE_PROMPT.replace("${summaries}", &summaries.join("\n\n---\n\n"))
+pub fn merge_prompt(lines: &[TranscriptLine], summaries: &[String]) -> String {
+    MERGE_PROMPT
+        .replace("${language}", summary_language(lines))
+        .replace("${summaries}", &summaries.join("\n\n---\n\n"))
+}
+
+/// The language to name in the prompts. Small models write English unless
+/// told otherwise, even for a French meeting.
+fn summary_language(lines: &[TranscriptLine]) -> &'static str {
+    let text: String = lines.iter().map(|l| format!("{} ", l.text)).collect();
+    match crate::language::guess(&text) {
+        Some(language) => language.name(),
+        None => "the main language of the meeting",
+    }
 }
 
 /// Removes a `<think>…</think>` block some models put before their answer.
@@ -342,7 +359,8 @@ mod tests {
         assert!(prompts
             .iter()
             .all(|p| p.len() < SUMMARY_PART_CHARS + SUMMARY_PROMPT.len()));
-        let merged = merge_prompt(&["## TL;DR\nA".into(), "## TL;DR\nB".into()]);
+        let merged = merge_prompt(&lines, &["## TL;DR\nA".into(), "## TL;DR\nB".into()]);
+        assert!(merged.contains("in French,"));
         assert!(merged.contains("## TL;DR\nA\n\n---\n\n## TL;DR\nB"));
         assert!(!merged.contains("${summaries}"));
     }

@@ -84,5 +84,5 @@ pub async fn summarize(
     if parts.len() == 1 {
         return Ok(parts.remove(0));
     }
-    model.ask(merge_prompt(&parts)).await
+    model.ask(merge_prompt(lines, &parts)).await
 }
