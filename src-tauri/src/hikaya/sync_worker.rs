@@ -15,6 +15,9 @@ use tokio::sync::Notify;
 
 /// Time between background runs when nothing else triggers one.
 const INTERVAL: Duration = Duration::from_secs(300);
+/// Time between looks for phone recordings. One small request, so a voice
+/// note from the phone is transcribed within a minute, not five.
+const PHONE_INTERVAL: Duration = Duration::from_secs(30);
 
 /// What the last sync attempt found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Type)]
@@ -337,5 +340,18 @@ pub fn start(app: &AppHandle, store: Arc<LearningStore>) {
         tokio::time::sleep(Duration::from_secs(5)).await;
         worker.trigger();
         worker.run_forever().await;
+    });
+    let worker = app.state::<Arc<SyncWorker>>().inner().clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(PHONE_INTERVAL).await;
+            // Only while the hub answers; otherwise the regular run retries.
+            if worker.status().state != SyncState::UpToDate {
+                continue;
+            }
+            if let (Ok(Some(config)), Some(app)) = (worker.store.hub_config(), &worker.app) {
+                super::meeting::phone::check(app, &config);
+            }
+        }
     });
 }
