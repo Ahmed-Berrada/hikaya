@@ -98,6 +98,14 @@ const MIGRATIONS: &[M] = &[
         words INTEGER NOT NULL DEFAULT 0
     );",
     ),
+    // Meetings made from phone recordings (ADR 0004): which recording, and
+    // whether the hub has been told it is done.
+    M::up(
+        "ALTER TABLE meetings ADD COLUMN phone_recording TEXT;
+    ALTER TABLE meetings ADD COLUMN phone_completed INTEGER NOT NULL DEFAULT 0;
+    CREATE UNIQUE INDEX meetings_phone_recording ON meetings (phone_recording)
+        WHERE phone_recording IS NOT NULL;",
+    ),
 ];
 
 /// A replacement rule as stored and as shown in the UI.
