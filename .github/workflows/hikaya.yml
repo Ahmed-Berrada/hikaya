@@ -12,6 +12,8 @@ on:
       - "hub/**"
       - ".dockerignore"
       - "src/hikaya/**"
+      - "src/components/hikaya/**"
+      - "tests/hikaya/**"
       - ".github/workflows/hikaya.yml"
   pull_request:
     paths:
@@ -19,6 +21,8 @@ on:
       - "hub/**"
       - ".dockerignore"
       - "src/hikaya/**"
+      - "src/components/hikaya/**"
+      - "tests/hikaya/**"
       - ".github/workflows/hikaya.yml"
 
 concurrency:
