@@ -104,6 +104,88 @@ impl LearningStore {
         Ok(conn.last_insert_rowid())
     }
 
+    /// Saves a meeting made from a phone recording, whole: its lines and the
+    /// `done` state in one transaction, so a crash never leaves half of it.
+    /// Saving the same recording again replaces the earlier transcript and
+    /// keeps the meeting's id and sync id.
+    pub fn save_phone_meeting(
+        &self,
+        recording: &str,
+        title: &str,
+        started_at: i64,
+        duration_ms: i64,
+        lines: &[TranscriptLine],
+    ) -> Result<i64> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let existing: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM meetings WHERE phone_recording = ?1",
+                params![recording],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let id = match existing {
+            Some(id) => {
+                tx.execute("DELETE FROM meeting_lines WHERE meeting_id = ?1", [id])?;
+                id
+            }
+            None => {
+                tx.execute(
+                    "INSERT INTO meetings (uid, title, started_at, system_audio, updated_at,
+                                           phone_recording)
+                     VALUES (lower(hex(randomblob(16))), ?1, ?2, 0, ?3, ?4)",
+                    params![title.trim(), started_at, now_ms(), recording],
+                )?;
+                tx.last_insert_rowid()
+            }
+        };
+        for line in lines.iter().filter(|l| !l.text.trim().is_empty()) {
+            tx.execute(
+                "INSERT INTO meeting_lines (meeting_id, start_ms, end_ms, speaker, text)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    id,
+                    line.start_ms,
+                    line.end_ms,
+                    line.speaker.as_str(),
+                    line.text.trim()
+                ],
+            )?;
+        }
+        tx.execute(
+            "UPDATE meetings SET status = 'done', duration_ms = ?2, updated_at = ?3, synced = 0,
+               phone_completed = 0
+             WHERE id = ?1",
+            params![id, duration_ms, now_ms()],
+        )?;
+        tx.commit()?;
+        Ok(id)
+    }
+
+    /// Phone recordings whose meeting reached the hub, but the hub has not
+    /// been told yet: `(recording id, meeting sync id)`.
+    pub fn phone_completions(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn()?;
+        let rows = conn
+            .prepare(
+                "SELECT phone_recording, uid FROM meetings
+                 WHERE phone_recording IS NOT NULL AND phone_completed = 0 AND synced = 1",
+            )?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Notes that the hub knows the recording became its meeting.
+    pub fn mark_phone_completed(&self, recording: &str) -> Result<()> {
+        self.conn()?.execute(
+            "UPDATE meetings SET phone_completed = 1 WHERE phone_recording = ?1",
+            params![recording],
+        )?;
+        Ok(())
+    }
+
     /// Saves one transcribed line.
     pub fn add_meeting_line(&self, meeting_id: i64, line: &TranscriptLine) -> Result<()> {
         if line.text.trim().is_empty() {
@@ -262,6 +344,59 @@ mod tests {
             speaker,
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn a_phone_meeting_is_saved_whole_once_and_completed_after_sync() {
+        let (_dir, store) = store();
+        let first = store
+            .save_phone_meeting(
+                "rec1",
+                "Café avec Sam",
+                1_000,
+                60_000,
+                &[
+                    line(0, Speaker::Room, "Bonjour"),
+                    line(30_000, Speaker::Room, " "),
+                ],
+            )
+            .expect("save");
+        let detail = store.meeting_detail(first).expect("detail").expect("found");
+        assert_eq!(detail.meeting.status, MeetingStatus::Done);
+        assert_eq!(detail.lines.len(), 1, "blank lines are dropped");
+        assert_eq!(detail.lines[0].speaker, "room");
+
+        // Transcribed again after a lapsed claim: same meeting, new lines.
+        let again = store
+            .save_phone_meeting(
+                "rec1",
+                "Café avec Sam",
+                1_000,
+                60_000,
+                &[line(0, Speaker::Room, "Bonjour Sam")],
+            )
+            .expect("save again");
+        assert_eq!(again, first);
+        assert_eq!(
+            store.meeting_lines(first).expect("lines")[0].text,
+            "Bonjour Sam"
+        );
+        assert_eq!(store.list_meetings().expect("list").len(), 1);
+
+        assert!(store
+            .phone_completions()
+            .expect("none before sync")
+            .is_empty());
+        store
+            .conn()
+            .expect("conn")
+            .execute("UPDATE meetings SET synced = 1", [])
+            .expect("synced");
+        let pending = store.phone_completions().expect("after sync");
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, "rec1");
+        store.mark_phone_completed("rec1").expect("mark");
+        assert!(store.phone_completions().expect("done").is_empty());
     }
 
     #[test]

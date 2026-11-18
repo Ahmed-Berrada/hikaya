@@ -59,8 +59,8 @@ pub struct MeetingManager {
 }
 
 /// Lets dictation go first, as file transcription does.
-struct GiveWayToDictation<'a> {
-    app: &'a AppHandle,
+pub(super) struct GiveWayToDictation<'a> {
+    pub(super) app: &'a AppHandle,
 }
 
 impl ChunkControl for GiveWayToDictation<'_> {
