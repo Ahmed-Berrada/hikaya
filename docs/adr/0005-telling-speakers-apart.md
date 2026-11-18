@@ -51,6 +51,29 @@ None runs on transcribe-cpp/GGML, which the app already ships, so each adds ONNX
 3. Accept only if a 30-minute meeting takes under two minutes on the laptop and speakers are
    right on most lines; otherwise keep You/Others/Room.
 
+## Measurements (2026-11-18)
+
+`eval/diarization/run.py`: sherpa-onnx 1.13, pyannote segmentation-3.0, two AMI test meetings
+(4 speakers each, headset mix), ProBook CPU (i7-10510U, 4 threads). DER with a 0.25 s collar,
+overlap skipped.
+
+| Meeting | Embedding          | Clustering           | DER    | Speed         |
+| ------- | ------------------ | -------------------- | ------ | ------------- |
+| ES2004a | 3D-Speaker CAM++   | any threshold        | ≈ 56%  | 10× real time |
+| ES2004a | WeSpeaker ResNet34 | threshold 1.0        | 12.7%  | 6× real time  |
+| ES2004a | WeSpeaker ResNet34 | 4 speakers given     | 21.4%  | 6× real time  |
+| IS1009a | WeSpeaker ResNet34 | threshold 0.6 to 1.1 | 38–46% | 6× real time  |
+| IS1009a | WeSpeaker ResNet34 | 4 speakers given     | 39.7%  | 6× real time  |
+
+Speed is fine: a 30-minute meeting takes about five minutes on this CPU, less on the laptop. The
+accuracy is not: no single threshold works for both meetings, and even the true speaker count
+leaves IS1009a at 40%. The default CAM++ model does not separate the voices at all. **Not
+accepted** with this pipeline.
+
+Next candidate: the pyannote **community-1** pipeline, whose clustering (VBx on PLDA-scored
+embeddings) is what makes it robust on AMI; it runs in Rust through `speakrs` on ONNX Runtime.
+The same script and meetings decide, with the same bar: under 20% DER on both.
+
 ## Consequences
 
 - Summaries and action items can name people, and exports become readable for calls with several
