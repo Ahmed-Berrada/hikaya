@@ -499,25 +499,37 @@ impl HttpHub {
             .send()
             .await
             .map_err(|e| HubError::Offline(e.without_url().to_string()))?;
-        let status = response.status();
-        if status.is_success() {
+        Self::read(response).await
+    }
+
+    /// The JSON body of a successful answer, or the error it reports.
+    async fn read<T: serde::de::DeserializeOwned>(
+        response: reqwest::Response,
+    ) -> Result<T, HubError> {
+        if response.status().is_success() {
             return response
                 .json()
                 .await
                 .map_err(|e| HubError::Other(format!("unexpected answer from the hub: {e}")));
         }
+        Err(Self::error(response).await)
+    }
+
+    /// The error an unsuccessful answer reports.
+    async fn error(response: reqwest::Response) -> HubError {
+        let status = response.status();
         let message = response
             .json::<ErrorBody>()
             .await
             .ok()
             .and_then(|b| b.message)
             .unwrap_or_else(|| status.to_string());
-        Err(match status.as_u16() {
+        match status.as_u16() {
             423 => HubError::Locked,
             401 => HubError::Unauthorized,
             400..=499 => HubError::Rejected(message),
             _ => HubError::Other(message),
-        })
+        }
     }
 
     fn url(&self, path: &str) -> String {
@@ -561,6 +573,86 @@ impl HttpHub {
             )
             .await?;
         Ok(body.token)
+    }
+}
+
+/// A recording made on a phone, waiting to be transcribed (ADR 0004).
+#[derive(Clone, Debug, Deserialize)]
+pub struct PhoneRecording {
+    pub id: String,
+    pub title: String,
+    pub mime: String,
+    /// Unix ms.
+    pub created_at: i64,
+    pub bytes: i64,
+}
+
+/// Downloading a long recording takes longer than a sync request.
+const AUDIO_TIMEOUT: Duration = Duration::from_secs(900);
+
+impl HttpHub {
+    /// Takes the oldest recording waiting for a computer, if any.
+    pub async fn claim_recording(&self) -> Result<Option<PhoneRecording>, HubError> {
+        let request = self.http.post(self.url("/api/recordings/claim"));
+        let request = match &self.token {
+            Some(token) => request.bearer_auth(token),
+            None => request,
+        };
+        let response = request
+            .send()
+            .await
+            .map_err(|e| HubError::Offline(e.without_url().to_string()))?;
+        if response.status() == reqwest::StatusCode::NO_CONTENT {
+            return Ok(None);
+        }
+        Self::read(response).await.map(Some)
+    }
+
+    /// The claimed recording's audio file.
+    pub async fn recording_audio(&self, id: &str) -> Result<Vec<u8>, HubError> {
+        let mut request = self
+            .http
+            .get(self.url(&format!("/api/recordings/{id}/audio")))
+            .timeout(AUDIO_TIMEOUT);
+        if let Some(token) = &self.token {
+            request = request.bearer_auth(token);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|e| HubError::Offline(e.without_url().to_string()))?;
+        if !response.status().is_success() {
+            return Err(Self::error(response).await);
+        }
+        Ok(response
+            .bytes()
+            .await
+            .map_err(|e| HubError::Offline(e.without_url().to_string()))?
+            .to_vec())
+    }
+
+    /// Tells the hub the recording became `meeting_uid`; it deletes the audio.
+    pub async fn complete_recording(&self, id: &str, meeting_uid: &str) -> Result<(), HubError> {
+        let _: serde_json::Value = self
+            .send(
+                self.http
+                    .post(self.url(&format!("/api/recordings/{id}/complete")))
+                    .json(&serde_json::json!({ "meeting_id": meeting_uid })),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Gives a recording back after a failure, with the reason.
+    pub async fn fail_recording(&self, id: &str, error: &str) -> Result<(), HubError> {
+        let _: serde_json::Value = self
+            .send(
+                self.http
+                    .post(self.url(&format!("/api/recordings/{id}/fail")))
+                    .json(&serde_json::json!({ "error": error })),
+            )
+            .await?;
+        Ok(())
     }
 }
 
