@@ -156,6 +156,35 @@ pub fn plain_transcript(lines: &[TranscriptLine], names: &SpeakerNames) -> Strin
         .join("\n")
 }
 
+const SUMMARY_PROMPT: &str = include_str!("prompts/meeting_summary.txt");
+const MERGE_PROMPT: &str = include_str!("prompts/meeting_merge.txt");
+
+/// Characters of transcript per summary request. About 3,000 tokens, so
+/// small local models (4B, 8K context) keep their instructions in view.
+pub const SUMMARY_PART_CHARS: usize = 12_000;
+
+/// The requests that summarize a meeting: one per part of the transcript.
+/// When there are several, their answers go to [`merge_prompt`].
+pub fn summary_prompts(lines: &[TranscriptLine], names: &SpeakerNames) -> Vec<String> {
+    split_for_summary(&plain_transcript(lines, names), SUMMARY_PART_CHARS)
+        .into_iter()
+        .map(|part| SUMMARY_PROMPT.replace("${transcript}", &part))
+        .collect()
+}
+
+/// The request that merges the summaries of a long meeting's parts.
+pub fn merge_prompt(summaries: &[String]) -> String {
+    MERGE_PROMPT.replace("${summaries}", &summaries.join("\n\n---\n\n"))
+}
+
+/// Removes a `<think>…</think>` block some models put before their answer.
+pub fn strip_think(text: &str) -> &str {
+    match text.find("</think>") {
+        Some(end) if text.trim_start().starts_with("<think>") => &text[end + "</think>".len()..],
+        _ => text,
+    }
+}
+
 /// Splits a transcript into parts of at most `max_chars`, cutting only
 /// between lines, so a long meeting can be summarized part by part. A single
 /// line longer than the limit becomes a part of its own.
@@ -276,6 +305,52 @@ mod tests {
             you: "Vous".into(),
             others: "Autres".into(),
         }
+    }
+
+    #[test]
+    fn a_short_meeting_is_one_summary_prompt_with_the_transcript_inside() {
+        let prompts = summary_prompts(
+            &[line(0, Speaker::Others, "On décale la démo à jeudi.")],
+            &names(),
+        );
+        assert_eq!(prompts.len(), 1);
+        assert!(prompts[0].contains("[00:00] Autres: On décale la démo à jeudi."));
+        assert!(!prompts[0].contains("${transcript}"));
+        assert!(
+            prompts[0].contains("\"Room\""),
+            "the prompt explains every speaker"
+        );
+    }
+
+    #[test]
+    fn a_long_meeting_is_summarized_in_parts_then_merged() {
+        let lines: Vec<TranscriptLine> = (0..400)
+            .map(|i| {
+                line(
+                    i * 30_000,
+                    if i % 2 == 0 {
+                        Speaker::You
+                    } else {
+                        Speaker::Others
+                    },
+                    "Une phrase assez longue pour remplir la transcription rapidement.",
+                )
+            })
+            .collect();
+        let prompts = summary_prompts(&lines, &names());
+        assert!(prompts.len() > 1);
+        assert!(prompts
+            .iter()
+            .all(|p| p.len() < SUMMARY_PART_CHARS + SUMMARY_PROMPT.len()));
+        let merged = merge_prompt(&["## TL;DR\nA".into(), "## TL;DR\nB".into()]);
+        assert!(merged.contains("## TL;DR\nA\n\n---\n\n## TL;DR\nB"));
+        assert!(!merged.contains("${summaries}"));
+    }
+
+    #[test]
+    fn a_leading_think_block_is_removed() {
+        assert_eq!(strip_think("<think>hmm</think>\n## TL;DR"), "\n## TL;DR");
+        assert_eq!(strip_think("## TL;DR <think>"), "## TL;DR <think>");
     }
 
     #[test]
