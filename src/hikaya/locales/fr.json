@@ -148,7 +148,8 @@
     },
     "speakers": {
       "you": "Vous",
-      "others": "Autres"
+      "others": "Autres",
+      "room": "Salle"
     },
     "errors": {
       "start": "Impossible de démarrer la réunion",

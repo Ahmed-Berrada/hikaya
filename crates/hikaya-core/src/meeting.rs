@@ -2,7 +2,8 @@
 //! splitting long transcripts for summarizing, and Markdown export.
 //!
 //! A meeting is recorded as two tracks (see ADR 0003): the microphone, shown
-//! as "You", and the system output, shown as "Others".
+//! as "You", and the system output, shown as "Others". A recording made on a
+//! phone (ADR 0004) is one microphone in a room, shown as "Room".
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -15,6 +16,29 @@ pub enum Speaker {
     You,
     /// The system audio track: everyone on the other end of a call.
     Others,
+    /// A phone recording: everyone in the room, on one microphone.
+    Room,
+}
+
+impl Speaker {
+    /// The name used in storage and on the wire.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Speaker::You => "you",
+            Speaker::Others => "others",
+            Speaker::Room => "room",
+        }
+    }
+
+    /// Reads a stored name. Unknown names read as "You", as before rooms
+    /// existed.
+    pub fn parse(value: &str) -> Self {
+        match value {
+            "others" => Speaker::Others,
+            "room" => Speaker::Room,
+            _ => Speaker::You,
+        }
+    }
 }
 
 /// One transcribed stretch of speech.
@@ -67,7 +91,7 @@ pub fn remove_echo(lines: Vec<TranscriptLine>) -> Vec<TranscriptLine> {
     lines
         .into_iter()
         .filter(|line| {
-            line.speaker == Speaker::Others
+            line.speaker != Speaker::You
                 || !others.iter().any(|other| {
                     (other.start_ms - line.start_ms).abs() <= ECHO_WINDOW_MS
                         && overlap(&other.text, &line.text) >= ECHO_SIMILARITY
@@ -100,6 +124,8 @@ pub struct SpeakerNames {
     pub you: String,
     /// Name for the system audio track, such as "Others".
     pub others: String,
+    /// Name for a phone recording's single track, such as "Room".
+    pub room: String,
 }
 
 impl SpeakerNames {
@@ -107,6 +133,7 @@ impl SpeakerNames {
         match speaker {
             Speaker::You => &self.you,
             Speaker::Others => &self.others,
+            Speaker::Room => &self.room,
         }
     }
 }
@@ -245,9 +272,31 @@ mod tests {
 
     fn names() -> SpeakerNames {
         SpeakerNames {
+            room: "Salle".into(),
             you: "Vous".into(),
             others: "Autres".into(),
         }
+    }
+
+    #[test]
+    fn room_lines_are_named_stored_and_never_taken_for_echo() {
+        for speaker in [Speaker::You, Speaker::Others, Speaker::Room] {
+            assert_eq!(Speaker::parse(speaker.as_str()), speaker);
+        }
+        assert_eq!(Speaker::parse("someone"), Speaker::You);
+        assert_eq!(
+            serde_json::to_string(&Speaker::Room).expect("json"),
+            "\"room\""
+        );
+        let lines = vec![
+            line(0, Speaker::Others, "on se voit jeudi"),
+            line(500, Speaker::Room, "on se voit jeudi"),
+        ];
+        assert_eq!(remove_echo(lines.clone()), lines);
+        assert_eq!(
+            plain_transcript(&[line(1_000, Speaker::Room, "Bonjour")], &names()),
+            "[00:01] Salle: Bonjour"
+        );
     }
 
     #[test]

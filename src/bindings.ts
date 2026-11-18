@@ -1178,9 +1178,9 @@ async hikayaMeetingDelete(id: number) : Promise<Result<null, string>> {
 /**
  * Summarizes a meeting with the post-processing provider and saves it.
  */
-async hikayaMeetingSummarize(id: number, you: string, others: string) : Promise<Result<string, string>> {
+async hikayaMeetingSummarize(id: number, you: string, others: string, room: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_summarize", { id, you, others }) };
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_summarize", { id, you, others, room }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1461,7 +1461,7 @@ export type ExportFormat = "markdown" | "srt"
 /**
  * Words the export uses, in the UI's language.
  */
-export type ExportLabels = { you: string; others: string; summary: string; transcript: string; 
+export type ExportLabels = { you: string; others: string; room: string; summary: string; transcript: string; 
 /**
  * The meeting's start, already formatted for the user.
  */

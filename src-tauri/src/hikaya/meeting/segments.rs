@@ -28,11 +28,7 @@ pub struct Segment {
 }
 
 fn file_name(speaker: Speaker, index: u32) -> String {
-    let track = match speaker {
-        Speaker::You => "you",
-        Speaker::Others => "others",
-    };
-    format!("{track}-{index:05}.wav")
+    format!("{}-{index:05}.wav", speaker.as_str())
 }
 
 /// Writes the audio of one track.
