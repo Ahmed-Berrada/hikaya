@@ -25,6 +25,8 @@
 //! | `POST /api/recordings/{id}/fail` | the claimer      | gives it back after an error         |
 //! | `POST /api/recordings/{id}/retry` | a device        | makes a failed recording wait again  |
 //! | `DELETE /api/recordings/{id}` | a device            | deletes it and its audio             |
+//! | `POST /api/recordings/upload` | a device            | a whole short recording at once      |
+//! | `GET  /api/recordings/{id}/text` | a device         | its state, and its text once done    |
 //!
 //! While the hub is locked, anything that needs data answers `423 Locked`,
 //! which tells a client to keep its changes queued and try again later.
@@ -423,6 +425,48 @@ struct FailBody {
 }
 
 #[derive(Deserialize)]
+struct UploadQuery {
+    title: Option<String>,
+}
+
+/// For an iOS Shortcut: the body is the audio file; its type comes from
+/// `Content-Type`.
+async fn upload_recording(
+    State(state): State<AppState>,
+    AuthedDevice(device): AuthedDevice,
+    Query(query): Query<UploadQuery>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Result<(StatusCode, Json<RecordingView>), ApiError> {
+    let mime = headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let title = query
+        .title
+        .filter(|t| !t.trim().is_empty())
+        .unwrap_or_else(|| "Voice note".into());
+    let created = blocking(move || {
+        let mut conn = data_connection(&state)?;
+        Ok(recordings::upload_whole(
+            &mut conn, device.id, &title, &mime, &body,
+        )?)
+    })
+    .await?;
+    Ok((StatusCode::CREATED, Json(created)))
+}
+
+async fn recording_text(
+    State(state): State<AppState>,
+    _device: AuthedDevice,
+    Path(id): Path<String>,
+) -> Result<Json<recordings::RecordingText>, ApiError> {
+    let conn = data_connection(&state)?;
+    Ok(Json(recordings::text(&conn, &id)?))
+}
+
+#[derive(Deserialize)]
 struct ListQuery {
     limit: Option<usize>,
 }
@@ -604,6 +648,8 @@ pub fn router(state: AppState) -> Router {
             get(list_recordings).post(create_recording),
         )
         .route("/api/recordings/claim", post(claim_recording))
+        .route("/api/recordings/upload", post(upload_recording))
+        .route("/api/recordings/{id}/text", get(recording_text))
         .route(
             "/api/recordings/{id}",
             get(get_recording).delete(delete_recording),
