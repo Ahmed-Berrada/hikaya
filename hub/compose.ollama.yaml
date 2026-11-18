@@ -1,0 +1,16 @@
+# Optional: lets the hub summarize meetings that arrive without a summary,
+# with an Ollama container on the same machine. See hub/README.md.
+#
+#   docker network create hikaya-ai
+#   docker network connect hikaya-ai ollama
+#   docker compose -f hub/compose.yaml -f hub/compose.ollama.yaml up -d --build
+services:
+  hub:
+    environment:
+      HIKAYA_HUB_OLLAMA_URL: "http://${HIKAYA_HUB_OLLAMA_HOST:-ollama}:11434"
+      HIKAYA_HUB_OLLAMA_MODEL: "${HIKAYA_HUB_OLLAMA_MODEL:-qwen3:4b-instruct}"
+    networks: [default, hikaya-ai]
+
+networks:
+  hikaya-ai:
+    external: true

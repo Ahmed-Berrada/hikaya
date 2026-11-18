@@ -38,6 +38,7 @@ const STRINGS = {
     you: "You",
     others: "Others",
     room: "Room",
+    hubSummary: "Summary written by the hub; your computer had not made one.",
     lines: "lines",
     record: "Record",
     recordHint:
@@ -99,6 +100,8 @@ const STRINGS = {
     you: "Vous",
     others: "Autres",
     room: "Salle",
+    hubSummary:
+      "Résumé rédigé par le hub ; votre ordinateur n'en avait pas fait.",
     lines: "lignes",
     record: "Enregistrer",
     recordHint:
@@ -347,7 +350,15 @@ async function openMeeting(id) {
     $("meeting-meta").textContent =
       `${format.format(new Date(m.started_at))} · ${clock(m.duration_ms)} · ${m.device}`;
     $("meeting-summary").hidden = !m.summary;
-    if (m.summary) renderSummary($("meeting-summary"), m.summary);
+    if (m.summary) {
+      renderSummary($("meeting-summary"), m.summary);
+      if (m.summary_by_hub) {
+        const note = document.createElement("p");
+        note.className = "hint";
+        note.textContent = t("hubSummary");
+        $("meeting-summary").append(note);
+      }
+    }
     const lines = $("meeting-lines");
     lines.replaceChildren();
     for (const l of m.lines) {

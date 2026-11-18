@@ -101,12 +101,15 @@ pub struct MeetingView {
 pub struct MeetingDetailView {
     #[serde(flatten)]
     pub meeting: MeetingView,
+    /// The computer's summary, or else the one the hub made.
     pub summary: Option<String>,
+    /// Whether `summary` was made by the hub's fallback model.
+    pub summary_by_hub: bool,
     pub lines: Vec<MeetingLineRecord>,
 }
 
 const COLUMNS: &str = "m.id, v.name, m.title, m.started_at, m.duration_ms,
-    m.summary IS NOT NULL AND m.summary != '', m.line_count";
+    coalesce(nullif(m.summary, ''), m.hub_summary) IS NOT NULL, m.line_count";
 
 fn view(row: &rusqlite::Row<'_>) -> rusqlite::Result<MeetingView> {
     Ok(MeetingView {
@@ -157,7 +160,7 @@ pub fn detail(conn: &Connection, id: &str) -> Result<Option<MeetingDetailView>> 
     let found = conn
         .query_row(
             &format!(
-                "SELECT {COLUMNS}, m.summary, m.lines_json FROM meetings m
+                "SELECT {COLUMNS}, nullif(m.summary, ''), m.lines_json, m.hub_summary FROM meetings m
                  JOIN devices v ON v.id = m.device_id WHERE m.id = ?1"
             ),
             params![id],
@@ -166,16 +169,19 @@ pub fn detail(conn: &Connection, id: &str) -> Result<Option<MeetingDetailView>> 
                     view(row)?,
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, String>(8)?,
+                    row.get::<_, Option<String>>(9)?,
                 ))
             },
         )
         .optional()?;
-    let Some((meeting, summary, lines_json)) = found else {
+    let Some((meeting, summary, lines_json, hub_summary)) = found else {
         return Ok(None);
     };
+    let summary_by_hub = summary.is_none() && hub_summary.is_some();
     Ok(Some(MeetingDetailView {
         meeting,
-        summary,
+        summary: summary.or(hub_summary),
+        summary_by_hub,
         lines: serde_json::from_str(&lines_json).context("reading a stored transcript")?,
     }))
 }
