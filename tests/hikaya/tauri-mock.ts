@@ -346,7 +346,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       proposals: options.proposals ?? [],
       history: options.history ?? [],
       hub: options.hub ?? {},
-      appVersion: options.appVersion ?? "0.3.1",
+      appVersion: options.appVersion ?? "0.4.0",
       meetings: options.meetings ?? [],
     },
   );
