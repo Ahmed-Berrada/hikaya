@@ -101,7 +101,12 @@ fn pass(app: &AppHandle, config: &HubConfig) -> Result<()> {
                 complete_sent(&store, &hub);
             }
             Err(e) => {
-                log::warn!("Phone recording {} failed: {e:#}", recording.id);
+                crate::hikaya::problems::report(
+                    app,
+                    crate::hikaya::problems::Problem::PhoneRecording,
+                    None,
+                    format!("{}: {e:#}", recording.title),
+                );
                 if let Err(e) = block_on(hub.fail_recording(&recording.id, &format!("{e:#}"))) {
                     log::warn!("Could not report the failure to the hub: {e}");
                 }

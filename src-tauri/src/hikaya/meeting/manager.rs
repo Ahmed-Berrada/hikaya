@@ -48,7 +48,7 @@ struct Running {
     started: Instant,
     tracks: Vec<TrackCapture>,
     writers: Vec<JoinHandle<Result<i64>>>,
-    transcriber: JoinHandle<()>,
+    transcriber: JoinHandle<u64>,
 }
 
 /// Owns the meeting in progress. Registered as Tauri state.
@@ -186,9 +186,11 @@ impl MeetingManager {
             }
         };
         if system_audio.is_some() {
-            let _ = self.store.conn().and_then(|c| {
+            if let Err(e) = self.store.conn().and_then(|c| {
                 Ok(c.execute("UPDATE meetings SET system_audio = 1 WHERE id = ?1", [id])?)
-            });
+            }) {
+                log::warn!("Meeting {id}: could not note that system audio is recorded: {e:#}");
+            }
         }
 
         let transcriber = {
@@ -255,7 +257,18 @@ impl MeetingManager {
             }
             // The writers dropped their segment senders, so the transcriber
             // finishes once the queued segments are done.
-            let _ = running.transcriber.join();
+            let failed = running.transcriber.join().unwrap_or_else(|_| {
+                log::error!("Meeting {id}: the transcriber panicked");
+                1
+            });
+            if failed > 0 {
+                crate::hikaya::problems::report(
+                    &app,
+                    crate::hikaya::problems::Problem::MeetingIncomplete,
+                    Some(failed),
+                    running.info.title.clone(),
+                );
+            }
             if let Err(e) = store.set_meeting_status(id, MeetingStatus::Done, length) {
                 log::error!("Meeting {id}: could not mark it done: {e:#}");
             }
@@ -288,16 +301,20 @@ impl MeetingManager {
 }
 
 /// Transcribes segments as they arrive, until both tracks have finished.
+/// Returns how many segments with speech could not be transcribed or saved.
 fn transcribe_segments(
     app: &AppHandle,
     store: &LearningStore,
     id: i64,
     segments: mpsc::Receiver<Segment>,
-) {
+) -> u64 {
     let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() else {
         log::error!("Meeting {id}: transcription is unavailable");
-        return;
+        // Every segment is lost to the transcript; count them so the user
+        // hears about it. Their audio stays on disk.
+        return segments.into_iter().count() as u64;
     };
+    let mut failed = 0;
     let control = GiveWayToDictation { app };
     for segment in segments {
         let length_ms = segment.samples.len() as i64 * 1000 / i64::from(SAMPLE_RATE);
@@ -315,6 +332,7 @@ fn transcribe_segments(
                     segment.speaker,
                     segment.path.display()
                 );
+                failed += 1;
                 continue;
             }
         };
@@ -330,7 +348,11 @@ fn transcribe_segments(
         };
         match store.add_meeting_line(id, &line) {
             Ok(()) => MeetingManager::emit(app, id),
-            Err(e) => log::error!("Meeting {id}: could not save a line: {e:#}"),
+            Err(e) => {
+                log::error!("Meeting {id}: could not save a line: {e:#}");
+                failed += 1;
+            }
         }
     }
+    failed
 }

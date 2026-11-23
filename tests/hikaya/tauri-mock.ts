@@ -281,6 +281,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
         },
       };
 
+      const listeners: Record<string, number[]> = {};
       const core: Record<string, (args: any) => unknown> = {
         get_app_settings: () => settings,
         get_default_settings: () => settings,
@@ -298,13 +299,25 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
         get_available_microphones: () => [],
         get_available_output_devices: () => [],
         get_microphone_channels: () => [],
-        "plugin:event|listen": () => nextCallback++,
+        "plugin:event|listen": ({ event, handler }: any) => {
+          (listeners[event] ??= []).push(handler);
+          return nextCallback++;
+        },
         "plugin:event|unlisten": () => null,
         "plugin:app|version": () => appVersion,
       };
 
       Object.assign(state.hub, hub);
-      (window as any).__HIKAYA_MOCK__ = { state, handlers: {} };
+      (window as any).__HIKAYA_MOCK__ = {
+        state,
+        handlers: {},
+        /** Sends a backend event to the page, as Rust's app.emit does. */
+        emit: (event: string, payload: unknown) => {
+          for (const id of listeners[event] ?? []) {
+            callbacks.get(id)?.({ event, id, payload });
+          }
+        },
+      };
       (window as any).__TAURI_OS_PLUGIN_INTERNALS__ = {
         os_type: "linux",
         platform: "linux",

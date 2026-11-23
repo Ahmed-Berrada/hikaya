@@ -8,6 +8,7 @@
 pub mod cleanup;
 pub mod commands;
 pub mod meeting;
+pub mod problems;
 pub mod stage;
 pub mod stats;
 pub mod store;

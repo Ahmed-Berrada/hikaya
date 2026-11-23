@@ -35,6 +35,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
 import { deleteRetiredModel } from "@/lib/models/retired";
 import { NoticePanel } from "@/components/notices/NoticePanel";
+import { listenForProblems } from "@/hikaya/problems";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 
 // flow is first-run onboarding; the rest are single screens for returning users.
@@ -102,6 +103,7 @@ function App() {
 
   useEffect(() => {
     checkOnboardingStatus();
+    listenForProblems();
   }, []);
 
   // Initialize RTL direction when language changes

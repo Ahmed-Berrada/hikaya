@@ -159,5 +159,21 @@
       "delete": "Impossible de supprimer la réunion",
       "rename": "Impossible de renommer la réunion"
     }
+  },
+  "problems": {
+    "sync_queue": {
+      "title": "Non mise en attente pour le hub",
+      "detail": "Une dictée a été enregistrée ici mais n'a pas pu être mise en attente pour votre hub."
+    },
+    "meeting_incomplete": {
+      "title_one": "Une partie de la réunion non transcrite",
+      "title_other": "Des parties de la réunion non transcrites",
+      "detail_one": "{{count}} partie n'a pas pu être transcrite ; son audio reste dans le dossier de la réunion.",
+      "detail_other": "{{count}} parties n'ont pas pu être transcrites ; leur audio reste dans le dossier de la réunion."
+    },
+    "phone_recording": {
+      "title": "Enregistrement du téléphone non transcrit",
+      "detail": "Le hub garde l'audio et le proposera de nouveau."
+    }
   }
 }

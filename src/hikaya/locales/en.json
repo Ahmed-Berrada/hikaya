@@ -159,5 +159,21 @@
       "delete": "Couldn't delete the meeting",
       "rename": "Couldn't rename the meeting"
     }
+  },
+  "problems": {
+    "sync_queue": {
+      "title": "Not Queued for the Hub",
+      "detail": "A dictation was saved here but could not be queued for your hub."
+    },
+    "meeting_incomplete": {
+      "title_one": "Part of a Meeting Not Transcribed",
+      "title_other": "Parts of a Meeting Not Transcribed",
+      "detail_one": "{{count}} part could not be transcribed; its audio is kept in the meeting's folder.",
+      "detail_other": "{{count}} parts could not be transcribed; their audio is kept in the meeting's folder."
+    },
+    "phone_recording": {
+      "title": "Phone Recording Not Transcribed",
+      "detail": "The hub keeps the audio and will offer it again."
+    }
   }
 }

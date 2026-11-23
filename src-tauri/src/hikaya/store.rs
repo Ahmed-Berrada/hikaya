@@ -7,7 +7,7 @@
 use anyhow::{Context, Result};
 use hikaya_core::corrections::{self, Substitution};
 use hikaya_core::rules::Rule;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -255,7 +255,7 @@ impl LearningStore {
                 params![pattern],
                 |row| row.get(0),
             )
-            .ok();
+            .optional()?;
         let now = now_ms();
         let id = match existing {
             Some(id) => {

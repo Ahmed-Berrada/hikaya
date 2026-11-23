@@ -387,9 +387,15 @@ impl LearningStore {
     }
 
     fn pull_cursor(&self) -> Result<i64> {
-        Ok(setting(&self.conn()?, "pull_cursor")?
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0))
+        let stored = setting(&self.conn()?, "pull_cursor")?;
+        Ok(match stored.as_deref().map(str::parse::<i64>) {
+            Some(Ok(cursor)) => cursor,
+            Some(Err(_)) => {
+                log::warn!("The saved pull cursor is unreadable; pulling all rules again");
+                0
+            }
+            None => 0,
+        })
     }
 }
 
