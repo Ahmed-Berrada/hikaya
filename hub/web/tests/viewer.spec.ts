@@ -82,7 +82,10 @@ const pair = async (page: Page, name = "iPhone Safari") => {
   await form.getByLabel("Name for this browser").fill(name);
   await form.getByLabel("Hub passphrase").fill(PASSPHRASE);
   await form.getByRole("button", { name: "Pair" }).click();
-  await expect(page.getByText(`Paired as ${name}`)).toBeVisible();
+  // Pairing checks the passphrase with Argon2, slow on purpose.
+  await expect(page.getByText(`Paired as ${name}`)).toBeVisible({
+    timeout: 20_000,
+  });
 };
 
 test("pairs this browser, then lists and searches the archive", async ({
@@ -256,6 +259,10 @@ test("records on the phone, and a computer turns it into a meeting", async ({
   await page.getByLabel("Title (optional)").fill("Café avec Sam");
   await page.getByRole("button", { name: "● Start recording" }).click();
   await expect(page.locator("#rec-status")).toContainText("Recording");
+  await expect(
+    page.getByRole("button", { name: "■ Stop", pressed: true }),
+  ).toBeVisible();
+  await expect(page.locator("#rec-clock")).toHaveText(/^00:0\d$/);
   await expect(page.locator("#rec-list li").first()).toContainText(
     "Café avec Sam",
   );
