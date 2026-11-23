@@ -200,7 +200,12 @@ pub fn on_dictation_saved(app: &AppHandle, entry: &HistoryEntry) {
     ) {
         Ok(true) => worker.trigger(),
         Ok(false) => {}
-        Err(e) => log::error!("Could not queue the dictation for the hub: {e:#}"),
+        Err(e) => super::problems::report(
+            app,
+            super::problems::Problem::SyncQueue,
+            None,
+            format!("{e:#}"),
+        ),
     }
 }
 
@@ -217,7 +222,12 @@ pub fn on_dictation_corrected(app: &AppHandle, entry: &HistoryEntry, corrected: 
     ) {
         Ok(true) => worker.trigger(),
         Ok(false) => {}
-        Err(e) => log::error!("Could not queue the correction for the hub: {e:#}"),
+        Err(e) => super::problems::report(
+            app,
+            super::problems::Problem::SyncQueue,
+            None,
+            format!("{e:#}"),
+        ),
     }
 }
 
