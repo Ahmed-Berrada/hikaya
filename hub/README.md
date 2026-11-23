@@ -39,21 +39,21 @@ The device token is shown once. Only its SHA-256 is stored.
 
 ## API
 
-| Route                       | Who may call it       | What it does                         |
-| --------------------------- | --------------------- | ------------------------------------ |
-| `GET /api/status`           | anyone on the network | lock state and version               |
-| `POST /api/init`            | anyone, once          | creates the vault with a passphrase  |
-| `POST /api/unlock`          | passphrase            | loads the key into memory            |
-| `POST /api/lock`            | a device              | forgets the key                      |
-| `POST /api/devices`         | passphrase            | registers a device, returns a token  |
-| `GET /api/devices`          | a device              | lists devices                        |
-| `DELETE /api/devices/{id}`  | passphrase            | revokes a device                     |
-| `GET /api/me`               | a device              | the calling device                   |
-| `POST /api/sync/push`       | a device              | sends dictations, rules, corrections |
-| `GET /api/sync/pull?since=` | a device              | rule changes since a cursor          |
-| `GET /api/dictations?q=`    | a device              | lists or searches the archive        |
-| `GET /api/meetings?q=`      | a device              | lists or searches meetings           |
-| `GET /api/meetings/{id}`    | a device              | one meeting with its transcript      |
+| Route                       | Who may call it       | What it does                                                 |
+| --------------------------- | --------------------- | ------------------------------------------------------------ |
+| `GET /api/status`           | anyone on the network | lock state and version                                       |
+| `POST /api/init`            | anyone, once          | creates the vault with a passphrase                          |
+| `POST /api/unlock`          | passphrase            | loads the key into memory                                    |
+| `POST /api/lock`            | a device              | forgets the key                                              |
+| `POST /api/devices`         | passphrase            | registers a device, returns a token                          |
+| `GET /api/devices`          | a device              | lists devices                                                |
+| `DELETE /api/devices/{id}`  | passphrase            | revokes a device                                             |
+| `GET /api/me`               | a device              | the calling device                                           |
+| `POST /api/sync/push`       | a device              | sends dictations, rules, corrections, meetings, custom words |
+| `GET /api/sync/pull?since=` | a device              | rule and custom-word changes since a cursor                  |
+| `GET /api/dictations?q=`    | a device              | lists or searches the archive                                |
+| `GET /api/meetings?q=`      | a device              | lists or searches meetings                                   |
+| `GET /api/meetings/{id}`    | a device              | one meeting with its transcript                              |
 
 ### Sync rules
 
@@ -61,6 +61,8 @@ The device token is shown once. Only its SHA-256 is stored.
 - A dictation can only be changed by the device that sent it; a newer `updated_at` replaces the text.
 - Rules are shared: any device may change one, and the newest `updated_at` wins. A deleted rule
   stays as a tombstone so the deletion reaches every device.
+- Custom words work the same way, with the word itself as the id: adding a word on one computer
+  adds it on the others, and removing it removes it everywhere. Words are case-sensitive.
 - A push is applied all or nothing, and holds at most 500 records.
 - Search matches whole words and word starts, ignoring case and accents.
 
