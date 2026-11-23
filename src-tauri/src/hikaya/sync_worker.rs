@@ -10,7 +10,7 @@ use serde::Serialize;
 use specta::Type;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
 /// Time between background runs when nothing else triggers one.
@@ -137,6 +137,14 @@ impl SyncWorker {
             }
         };
         self.set(SyncState::Syncing, None);
+        if let Some(app) = &self.app {
+            let words = crate::settings::get_settings(app).custom_words;
+            if let Err(e) = self.store.note_custom_words(&words) {
+                // Not fatal: the rest still syncs, and the words are compared
+                // again next run.
+                log::warn!("Could not queue custom-word changes: {e:#}");
+            }
+        }
         let result = match HttpHub::for_config(&config) {
             Ok(hub) => sync_once(&self.store, &hub).await,
             Err(e) => Err(e),
@@ -150,6 +158,9 @@ impl SyncWorker {
                         report.sent_rules,
                         report.received_rules
                     );
+                }
+                if let Some(app) = &self.app {
+                    apply_received_words(app, &report.received_words);
                 }
                 self.set(SyncState::UpToDate, None);
                 if report.more {
@@ -399,4 +410,26 @@ pub fn start(app: &AppHandle, store: Arc<LearningStore>) {
             }
         }
     });
+}
+
+/// Puts custom-word changes made on other devices into this device's
+/// settings, word by word, so a word the user just typed here is kept.
+fn apply_received_words(app: &AppHandle, changes: &[hikaya_core::sync::WordRecord]) {
+    if changes.is_empty() {
+        return;
+    }
+    let mut settings = crate::settings::get_settings(app);
+    if hikaya_core::sync::apply_word_changes(&mut settings.custom_words, changes) {
+        let words = settings.custom_words.clone();
+        crate::settings::write_settings(app, settings);
+        log::info!(
+            "Hub sync: {} custom-word change(s) from other devices",
+            changes.len()
+        );
+        // The settings screen reloads on this event.
+        let _ = app.emit(
+            "settings-changed",
+            serde_json::json!({ "setting": "custom_words", "value": words }),
+        );
+    }
 }

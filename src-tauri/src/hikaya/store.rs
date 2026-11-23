@@ -117,6 +117,17 @@ const MIGRATIONS: &[M] = &[
         PRIMARY KEY (kind, uid)
     );",
     ),
+    // The custom-words dictionary as last sent to or received from the hub.
+    // Handy keeps the list in its settings; comparing the two finds what the
+    // user added or removed. A removed word stays as a tombstone until sent.
+    M::up(
+        "CREATE TABLE custom_words (
+        word TEXT PRIMARY KEY,
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        synced INTEGER NOT NULL DEFAULT 0
+    );",
+    ),
 ];
 
 /// A replacement rule as stored and as shown in the UI.
