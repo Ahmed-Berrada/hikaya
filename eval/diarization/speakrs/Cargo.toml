@@ -1,0 +1,18 @@
+[package]
+name = "hikaya-diarize-eval"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Diarizes a 16 kHz WAV with speakrs (pyannote community-1) and prints RTTM, for ADR 0005."
+publish = false
+
+[dependencies]
+speakrs = { version = "=0.8.0", default-features = false, features = ["online"] }
+hound = "3"
+
+[features]
+default = ["cpu"]
+cpu = ["speakrs/cpu"]
+# NVIDIA RTX 40 series (the owner's RTX 4070):
+#   cargo run --release --no-default-features --features cuda -- meeting.wav id
+cuda = ["speakrs/cuda-rtx40"]

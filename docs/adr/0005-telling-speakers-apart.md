@@ -1,6 +1,6 @@
 # 0005: Telling speakers apart within a track
 
-- Status: proposed
+- Status: proposed (accuracy passed with `speakrs`; Windows speed to measure)
 - Date: 2026-11-18
 
 ## Context
@@ -70,9 +70,26 @@ accuracy is not: no single threshold works for both meetings, and even the true 
 leaves IS1009a at 40%. The default CAM++ model does not separate the voices at all. **Not
 accepted** with this pipeline.
 
-Next candidate: the pyannote **community-1** pipeline, whose clustering (VBx on PLDA-scored
-embeddings) is what makes it robust on AMI; it runs in Rust through `speakrs` on ONNX Runtime.
-The same script and meetings decide, with the same bar: under 20% DER on both.
+### pyannote community-1 through `speakrs` 0.8 (2026-11-23)
+
+`eval/diarization/speakrs`: the community-1 pipeline (segmentation-3.0, WeSpeaker ResNet34,
+VBx clustering on PLDA-scored embeddings) in native Rust, CPU mode, number of speakers found
+automatically. Same meetings and scoring.
+
+| Meeting | DER      | Speakers found / real | Speed on the ProBook CPU                        |
+| ------- | -------- | --------------------- | ----------------------------------------------- |
+| ES2004a | **8.6%** | 4 / 4                 | 1.5× real time (the CPU was also building Rust) |
+| IS1009a | **9.7%** | 4 / 4                 | 1.5× real time                                  |
+
+Both meetings pass the accuracy bar by a wide margin, with no threshold to tune. `speakrs` also
+removes the main cost of the first option: it needs **no ONNX Runtime** (its own CPU kernels, or
+CUDA through the NVIDIA driver), and its models (MIT and CC BY 4.0) are not gated.
+
+**Revised proposal:** use `speakrs` instead of `sherpa-onnx`. Still to measure before building it
+into the app: speed and installer size on the Windows laptop, in CPU mode and in CUDA mode
+(`cargo run --release --no-default-features --features cuda` in `eval/diarization/speakrs`). On
+this CPU a 30-minute meeting takes about 20 minutes, which is acceptable for a background step
+after a meeting but not for the two-minute bar; the RTX 4070 should do it in seconds.
 
 ## Consequences
 
