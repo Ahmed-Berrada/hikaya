@@ -65,6 +65,52 @@ pub struct SubstitutionRecord {
     pub created_at: i64,
 }
 
+/// One word of the user's custom-words dictionary. The word is its own id,
+/// so two devices adding the same word make one record. A removed word stays
+/// as a tombstone so the removal reaches every device.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WordRecord {
+    /// The word as the user typed it, trimmed.
+    pub word: String,
+    /// When it was added or removed. The newest change wins.
+    pub updated_at: i64,
+    /// True for a removed word (a tombstone).
+    #[serde(default)]
+    pub deleted: bool,
+}
+
+/// Longest custom word accepted, in bytes.
+pub const MAX_WORD_BYTES: usize = 100;
+
+/// The form a custom word is stored and compared in: trimmed. `None` when
+/// nothing is left, the word is too long or contains a control character.
+pub fn clean_word(word: &str) -> Option<&str> {
+    let word = word.trim();
+    let ok =
+        !word.is_empty() && word.len() <= MAX_WORD_BYTES && !word.chars().any(char::is_control);
+    ok.then_some(word)
+}
+
+/// Applies word changes from the hub to a custom-words list: an added word
+/// is appended if missing, a removed one is taken out. Words are compared
+/// trimmed and case-sensitively, like the hub's ids. True if the list changed.
+pub fn apply_word_changes(list: &mut Vec<String>, changes: &[WordRecord]) -> bool {
+    let before = list.len();
+    let mut added = false;
+    for change in changes {
+        if change.deleted {
+            list.retain(|w| clean_word(w) != Some(change.word.as_str()));
+        } else if !list
+            .iter()
+            .any(|w| clean_word(w) == Some(change.word.as_str()))
+        {
+            list.push(change.word.clone());
+            added = true;
+        }
+    }
+    added || list.len() != before
+}
+
 /// One line of a meeting transcript, as synced.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MeetingLineRecord {
@@ -117,12 +163,19 @@ pub struct PushRequest {
     /// Finished meetings, new or changed.
     #[serde(default)]
     pub meetings: Vec<MeetingRecord>,
+    /// Custom words added or removed.
+    #[serde(default)]
+    pub words: Vec<WordRecord>,
 }
 
 impl PushRequest {
     /// Total number of records in the push.
     pub fn len(&self) -> usize {
-        self.dictations.len() + self.rules.len() + self.substitutions.len() + self.meetings.len()
+        self.dictations.len()
+            + self.rules.len()
+            + self.substitutions.len()
+            + self.meetings.len()
+            + self.words.len()
     }
 
     /// True when there is nothing to send.
@@ -143,6 +196,9 @@ pub struct PushResponse {
     /// Meetings added or updated.
     #[serde(default)]
     pub meetings: usize,
+    /// Custom-word changes accepted (older ones are ignored).
+    #[serde(default)]
+    pub words: usize,
 }
 
 /// Answer to `GET /api/sync/pull?since=<cursor>`.
@@ -150,6 +206,9 @@ pub struct PushResponse {
 pub struct PullResponse {
     /// Rules that changed after the cursor the device sent, tombstones included.
     pub rules: Vec<RuleRecord>,
+    /// Custom words that changed after the cursor, tombstones included.
+    #[serde(default)]
+    pub words: Vec<WordRecord>,
     /// Send this as `since` next time.
     pub cursor: i64,
 }
@@ -169,6 +228,51 @@ mod tests {
         assert_eq!(request.dictations[0].language, None);
         assert!(!request.rules[0].deleted);
         assert!(request.substitutions.is_empty());
+    }
+
+    #[test]
+    fn a_pull_from_an_older_hub_has_no_words() {
+        let pulled: PullResponse =
+            serde_json::from_str(r#"{"rules":[],"cursor":3}"#).expect("valid pull");
+        assert!(pulled.words.is_empty());
+    }
+
+    #[test]
+    fn words_are_trimmed_and_checked() {
+        assert_eq!(clean_word("  GitHub "), Some("GitHub"));
+        assert_eq!(clean_word("   "), None);
+        assert_eq!(clean_word("a\tb"), None);
+        assert_eq!(clean_word(&"x".repeat(MAX_WORD_BYTES + 1)), None);
+        assert_eq!(clean_word("Kubernetes"), Some("Kubernetes"));
+    }
+
+    fn change(word: &str, deleted: bool) -> WordRecord {
+        WordRecord {
+            word: word.into(),
+            updated_at: 1,
+            deleted,
+        }
+    }
+
+    #[test]
+    fn word_changes_add_once_and_remove_every_spelling_with_spaces() {
+        let mut list = vec!["Hikaya".to_string(), " Ollama ".to_string()];
+        assert!(apply_word_changes(
+            &mut list,
+            &[
+                change("GitHub", false),
+                change("Hikaya", false),
+                change("Ollama", true)
+            ]
+        ));
+        assert_eq!(list, ["Hikaya", "GitHub"]);
+        assert!(!apply_word_changes(
+            &mut list,
+            &[change("GitHub", false), change("gone", true)]
+        ));
+        // Case matters: "github" is another word.
+        assert!(apply_word_changes(&mut list, &[change("github", false)]));
+        assert_eq!(list.len(), 3);
     }
 
     #[test]
