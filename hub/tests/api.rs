@@ -776,3 +776,29 @@ async fn a_shortcut_uploads_a_voice_note_and_polls_for_its_text() {
     assert_eq!(body["status"], "pending");
     assert_eq!(body["text"], Value::Null);
 }
+
+#[tokio::test]
+async fn an_audio_body_larger_than_a_chunk_is_refused_before_it_is_stored() {
+    let hub = Hub::new();
+    hub.init().await;
+    let (_, phone) = hub.device("iphone").await;
+    let (_, body) = hub
+        .call(
+            "POST",
+            "/api/recordings",
+            Some(&phone),
+            Some(json!({ "title": "x", "mime": "audio/mp4" })),
+        )
+        .await;
+    let id = body["id"].as_str().expect("id").to_string();
+    let big: &'static [u8] = Box::leak(vec![0u8; 9 * 1024 * 1024].into_boxed_slice());
+    let (status, _, _) = hub
+        .bytes(
+            "PUT",
+            &format!("/api/recordings/{id}/chunks/0"),
+            &phone,
+            big,
+        )
+        .await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+}

@@ -68,10 +68,38 @@ async fn main() -> Result<()> {
         let delay_minutes: i64 = std::env::var("HIKAYA_HUB_SUMMARY_DELAY_MINUTES")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(30);
+            .unwrap_or(30)
+            .clamp(0, 7 * 24 * 60);
         tracing::info!(%url, %model, "meetings without a summary are summarized here");
         tokio::spawn(summaries(state.clone(), url, model, delay_minutes * 60_000));
     }
+
+    // Recordings a phone started but never finished hold audio for nothing.
+    let sweeper = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            tick.tick().await;
+            let state = sweeper.clone();
+            let swept = tokio::task::spawn_blocking(move || -> Result<usize> {
+                let Some(mut conn) = state.connection()? else {
+                    return Ok(0);
+                };
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as i64)
+                    .unwrap_or(0);
+                hikaya_hub::recordings::sweep_abandoned(&mut conn, now)
+            })
+            .await;
+            match swept {
+                Ok(Ok(0)) => {}
+                Ok(Ok(n)) => tracing::info!("removed {n} abandoned recording(s)"),
+                Ok(Err(e)) => tracing::warn!("sweeping abandoned recordings failed: {e:#}"),
+                Err(e) => tracing::error!("sweep task failed: {e}"),
+            }
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind(listen)
         .await
