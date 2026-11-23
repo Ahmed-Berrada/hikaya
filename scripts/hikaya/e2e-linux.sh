@@ -100,6 +100,7 @@ store["settings"].update({
     "selected_language": "en",
     "selected_model": model,
     "update_checks_enabled": False,
+    "custom_words": ["Hikaya"],      # must reach the hub when one is connected
 })
 path.write_text(json.dumps(store))
 PY
@@ -140,6 +141,10 @@ if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
   curl -fs -X POST "$HUB_URL/api/sync/push" -H "authorization: Bearer $READER" -H 'content-type: application/json' \
     -d "{\"rules\":[{\"id\":\"phone-rule-1\",\"pattern\":\"your country\",\"replacement\":\"your community\",\"enabled\":true,\"source\":\"manual\",\"updated_at\":$(date +%s%3N)}]}" >/dev/null \
     || die "could not add the remote rule"
+  # A custom word added on "another device", which must land in the app's settings.
+  curl -fs -X POST "$HUB_URL/api/sync/push" -H "authorization: Bearer $READER" -H 'content-type: application/json' \
+    -d "{\"words\":[{\"word\":\"Kubernetes\",\"updated_at\":$(date +%s%3N)}]}" >/dev/null \
+    || die "could not add the remote custom word"
 fi
 
 say "adding one local replacement rule"
@@ -205,4 +210,12 @@ if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
   [[ -n "$found" ]] || { grep -i "hub" "$WORK/app.log" | tail -5; die "the dictation never reached the hub"; }
   echo "   hub has: $found"
   say "PASS: the dictation was synced to the hub and a rule from another device was applied"
+
+  say "checking custom words both ways"
+  words="$(curl -fs "$HUB_URL/api/sync/pull?since=0" -H "authorization: Bearer $READER" \
+    | python3 -c 'import sys,json;print(" ".join(sorted(w["word"] for w in json.load(sys.stdin)["words"] if not w.get("deleted"))))')"
+  [[ "$words" == "Hikaya Kubernetes" ]] || die "the hub has custom words [$words], expected [Hikaya Kubernetes]"
+  local_words="$(python3 -c 'import sys,json;print(" ".join(sorted(json.load(open(sys.argv[1]))["settings"]["custom_words"])))' "$DATA/settings_store.json")"
+  [[ "$local_words" == "Hikaya Kubernetes" ]] || die "the app has custom words [$local_words], expected [Hikaya Kubernetes]"
+  say "PASS: a custom word reached the hub and one from another device reached the app's settings"
 fi

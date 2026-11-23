@@ -72,9 +72,9 @@ replacements) in that prompt, and the stats panel. Left: aliases for the custom-
 - Sync for dictations, dictionary and rules from a client-side outbox. Web viewer with search.
 - Encrypted backups, with a tested restore.
 
-Done: vault and locked state, device tokens, sync of dictations, rules and corrections, search, web
-viewer, encrypted snapshots in the nightly backup, Docker deployment on the home server. Left:
-syncing the custom-words dictionary, and `age` encryption for audio (no audio is synced yet; it
+Done: vault and locked state, device tokens, sync of dictations, rules, corrections and the
+custom-words dictionary, search, web viewer, encrypted snapshots in the nightly backup, Docker
+deployment on the home server. Left: `age` encryption for audio (no audio is synced yet; it
 comes with meetings).
 
 ### v0.4: Meetings (done, pending the Windows check)
