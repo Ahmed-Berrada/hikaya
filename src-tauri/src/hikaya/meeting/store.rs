@@ -155,7 +155,7 @@ impl LearningStore {
         }
         tx.execute(
             "UPDATE meetings SET status = 'done', duration_ms = ?2, updated_at = ?3, synced = 0,
-               phone_completed = 0
+               phone_completed = 0, summary = NULL, summary_model = NULL
              WHERE id = ?1",
             params![id, duration_ms, now_ms()],
         )?;
