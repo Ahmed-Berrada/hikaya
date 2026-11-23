@@ -10,7 +10,7 @@ use super::manager::{GiveWayToDictation, UPDATED_EVENT};
 use super::segments::{SAMPLE_RATE, SEGMENT_SECONDS};
 use super::summary::{summarize, SummaryModel};
 use crate::hikaya::store::LearningStore;
-use crate::hikaya::sync::{HttpHub, HubConfig, PhoneRecording};
+use crate::hikaya::sync::{HttpHub, HubConfig, HubError, PhoneRecording};
 use crate::managers::transcription::TranscriptionManager;
 use anyhow::{anyhow, Context, Result};
 use hikaya_core::meeting::{Speaker, SpeakerNames, TranscriptLine};
@@ -25,6 +25,16 @@ const SEGMENT_SAMPLES: usize = (SAMPLE_RATE * SEGMENT_SECONDS) as usize;
 
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
+/// Clears [`RUNNING`] however the pass ends, even by a panic, so phone
+/// recordings are never stopped for the rest of the session.
+struct Running;
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Starts a pass in the background, unless one is running.
 pub fn check(app: &AppHandle, config: &HubConfig) {
     if RUNNING.swap(true, Ordering::SeqCst) {
@@ -34,10 +44,10 @@ pub fn check(app: &AppHandle, config: &HubConfig) {
     let spawned = std::thread::Builder::new()
         .name("hikaya-phone-recordings".into())
         .spawn(move || {
+            let _running = Running;
             if let Err(e) = pass(&app, &config) {
                 log::warn!("Phone recordings: {e:#}");
             }
-            RUNNING.store(false, Ordering::SeqCst);
         });
     if let Err(e) = spawned {
         log::error!("Could not start the phone recordings worker: {e}");
@@ -114,6 +124,15 @@ fn complete_sent(store: &LearningStore, hub: &HttpHub) {
                     log::warn!("Could not note recording {recording} as complete: {e:#}");
                 }
             }
+            // The hub refuses for good: the recording was deleted on the
+            // phone, or another computer finished it. The meeting is here
+            // either way; asking again would fail forever.
+            Err(HubError::Rejected(why)) => {
+                log::warn!("The hub will not complete recording {recording}: {why}");
+                if let Err(e) = store.mark_phone_completed(&recording) {
+                    log::warn!("Could not note recording {recording} as complete: {e:#}");
+                }
+            }
             Err(e) => log::warn!("The hub did not complete recording {recording}: {e}"),
         }
     }
@@ -167,13 +186,20 @@ fn transcribe(
     hub: &HttpHub,
     recording: &PhoneRecording,
 ) -> Result<i64> {
+    // The id names a local file: only accept what the hub generates.
+    if recording.id.len() != 32 || !recording.id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(anyhow!("the hub sent an invalid recording id"));
+    }
     let audio = block_on(hub.recording_audio(&recording.id))?;
     let dir = crate::portable::app_data_dir(app)?.join("phone");
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let path = dir.join(format!("{}.{}", recording.id, extension(&recording.mime)));
     std::fs::write(&path, &audio).with_context(|| format!("writing {}", path.display()))?;
+    drop(audio);
     let decoded = crate::audio_toolkit::audio::decode_audio_file(&path);
-    let _ = std::fs::remove_file(&path);
+    if let Err(e) = std::fs::remove_file(&path) {
+        log::warn!("Could not delete {}: {e}", path.display());
+    }
     let samples = decoded.context("the recording could not be read")?;
 
     let tm = app
@@ -200,6 +226,10 @@ fn transcribe(
             text,
         });
     }
+    if lines.is_empty() {
+        // Keeps the audio on the hub, where the phone shows why.
+        return Err(anyhow!("no speech was found in the recording"));
+    }
     let meeting = store.save_phone_meeting(
         &recording.id,
         &recording.title,
@@ -208,14 +238,18 @@ fn transcribe(
         &lines,
     )?;
     // The phone cannot summarize, so the computer does it when it can.
-    if !lines.is_empty() {
-        match SummaryModel::from_settings(&crate::settings::get_settings(app)) {
-            Ok(model) => match block_on(summarize(&model, &lines, &speaker_names(app))) {
-                Ok(summary) => store.set_meeting_summary(meeting, &summary, model.name())?,
-                Err(e) => log::warn!("Meeting {meeting} not summarized: {e}"),
-            },
-            Err(why) => log::info!("Meeting {meeting} not summarized: {why}"),
-        }
+    // The meeting is saved: from here a problem is only logged, or the hub
+    // would hand the recording out again and it would be transcribed twice.
+    match SummaryModel::from_settings(&crate::settings::get_settings(app)) {
+        Ok(model) => match block_on(summarize(&model, &lines, &speaker_names(app))) {
+            Ok(summary) => {
+                if let Err(e) = store.set_meeting_summary(meeting, &summary, model.name()) {
+                    log::warn!("Meeting {meeting}: could not save its summary: {e:#}");
+                }
+            }
+            Err(e) => log::warn!("Meeting {meeting} not summarized: {e}"),
+        },
+        Err(why) => log::info!("Meeting {meeting} not summarized: {why}"),
     }
     let _ = app.emit(UPDATED_EVENT, meeting);
     Ok(meeting)
