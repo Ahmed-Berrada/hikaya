@@ -15,7 +15,7 @@
 
 use anyhow::{Context, Result};
 use rand::RngCore;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Serialize;
 
 /// Largest chunk accepted. The phone sends a few seconds at a time.
@@ -26,6 +26,12 @@ pub const MAX_RECORDING_BYTES: i64 = 256 * 1024 * 1024;
 pub const CLAIM_TIMEOUT_MS: i64 = 2 * 60 * 60 * 1000;
 /// Failed transcriptions before a recording stops being handed out.
 pub const MAX_ATTEMPTS: i64 = 3;
+/// Audio the hub keeps for recordings not yet transcribed, all devices
+/// together. A device stuck in a loop cannot fill the disk.
+pub const MAX_WAITING_BYTES: i64 = 2 * 1024 * 1024 * 1024;
+/// A recording still open after this long was abandoned (the phone's page
+/// was closed for good); its audio is deleted.
+pub const ABANDONED_AFTER_MS: i64 = 24 * 60 * 60 * 1000;
 /// Audio types a phone may send.
 const MIME_TYPES: &[&str] = &[
     "audio/mp4",
@@ -184,7 +190,10 @@ pub fn put_chunk(
     if !(0..100_000).contains(&index) {
         return Err(RecordingError::Invalid("chunk index out of range".into()));
     }
-    let tx = conn.transaction().context("starting a transaction")?;
+    // Immediate: two uploads of the same chunk must not both read then write.
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .context("starting a transaction")?;
     let found: Option<(i64, String)> = tx
         .query_row(
             "SELECT device_id, status FROM recordings WHERE id = ?1",
@@ -221,6 +230,14 @@ pub fn put_chunk(
     )?;
     let total = total - previous + data.len() as i64;
     if total > MAX_RECORDING_BYTES {
+        return Err(RecordingError::TooLarge);
+    }
+    let waiting: i64 = tx.query_row(
+        "SELECT coalesce(sum(bytes), 0) FROM recordings WHERE status != 'done'",
+        [],
+        |row| row.get(0),
+    )?;
+    if waiting - previous + data.len() as i64 > MAX_WAITING_BYTES {
         return Err(RecordingError::TooLarge);
     }
     tx.execute(
@@ -297,11 +314,14 @@ pub fn claim(conn: &Connection, device: i64) -> Result<Option<RecordingView>> {
     let now = now_ms();
     let id: Option<String> = conn
         .query_row(
-            "UPDATE recordings SET status = 'claimed', claimed_by = ?1, claimed_at = ?2
+            // A claim that lapsed counts as a failed attempt: a recording that
+            // crashes every computer that takes it ends up parked.
+            "UPDATE recordings SET status = 'claimed', claimed_by = ?1, claimed_at = ?2,
+               attempts = attempts + (status = 'claimed')
              WHERE id = (
                SELECT id FROM recordings
                WHERE (status = 'pending' AND attempts < ?3)
-                  OR (status = 'claimed' AND claimed_at < ?4)
+                  OR (status = 'claimed' AND claimed_at < ?4 AND attempts + 1 < ?3)
                ORDER BY created_at LIMIT 1)
              RETURNING id",
             params![device, now, MAX_ATTEMPTS, now - CLAIM_TIMEOUT_MS],
@@ -345,11 +365,15 @@ pub fn audio(
     )?;
     let mut statement =
         conn.prepare("SELECT data FROM recording_chunks WHERE recording_id = ?1 ORDER BY idx")?;
-    let mut audio = Vec::new();
+    let bytes: i64 = conn.query_row(
+        "SELECT bytes FROM recordings WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?;
+    let mut audio = Vec::with_capacity(usize::try_from(bytes).unwrap_or(0));
     let mut rows = statement.query(params![id])?;
     while let Some(row) = rows.next()? {
-        let chunk: Vec<u8> = row.get(0)?;
-        audio.extend_from_slice(&chunk);
+        audio.extend_from_slice(row.get_ref(0)?.as_blob().map_err(rusqlite::Error::from)?);
     }
     Ok((mime, audio))
 }
@@ -361,6 +385,19 @@ pub fn complete(
     id: &str,
     meeting_id: &str,
 ) -> Result<RecordingView, RecordingError> {
+    // Completing twice is fine: the computer may not have seen the answer.
+    let done: Option<(String, Option<String>, Option<i64>)> = conn
+        .query_row(
+            "SELECT status, meeting_id, claimed_by FROM recordings WHERE id = ?1",
+            params![id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    if let Some((status, Some(meeting), Some(by))) = &done {
+        if status == "done" && meeting == meeting_id && *by == device {
+            return require(conn, id);
+        }
+    }
     require_claim(conn, device, id)?;
     let exists: bool = conn.query_row(
         "SELECT count(*) > 0 FROM meetings WHERE id = ?1 AND device_id = ?2",
@@ -372,14 +409,24 @@ pub fn complete(
             "push the meeting before completing the recording".into(),
         ));
     }
-    let tx = conn.transaction().context("starting a transaction")?;
+    let tx = conn
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .context("starting a transaction")?;
+    // The claim is checked again here, so a claim that lapsed meanwhile and
+    // went to another computer is not completed by this one.
+    let changed = tx.execute(
+        "UPDATE recordings SET status = 'done', meeting_id = ?2, error = NULL, bytes = 0
+         WHERE id = ?1 AND status = 'claimed' AND claimed_by = ?3",
+        params![id, meeting_id, device],
+    )?;
+    if changed == 0 {
+        return Err(RecordingError::Conflict(
+            "this device no longer holds the recording".into(),
+        ));
+    }
     tx.execute(
         "DELETE FROM recording_chunks WHERE recording_id = ?1",
         params![id],
-    )?;
-    tx.execute(
-        "UPDATE recordings SET status = 'done', meeting_id = ?2, error = NULL WHERE id = ?1",
-        params![id, meeting_id],
     )?;
     tx.commit().context("completing a recording")?;
     require(conn, id)
@@ -395,13 +442,18 @@ pub fn fail(
 ) -> Result<RecordingView, RecordingError> {
     require_claim(conn, device, id)?;
     let error: String = error.chars().take(500).collect();
-    conn.execute(
+    let changed = conn.execute(
         "UPDATE recordings SET attempts = attempts + 1, error = ?2, claimed_by = NULL,
            claimed_at = NULL,
            status = CASE WHEN attempts + 1 >= ?3 THEN 'failed' ELSE 'pending' END
-         WHERE id = ?1",
-        params![id, error, MAX_ATTEMPTS],
+         WHERE id = ?1 AND status = 'claimed' AND claimed_by = ?4",
+        params![id, error, MAX_ATTEMPTS, device],
     )?;
+    if changed == 0 {
+        return Err(RecordingError::Conflict(
+            "this device no longer holds the recording".into(),
+        ));
+    }
     require(conn, id)
 }
 
@@ -414,7 +466,7 @@ pub fn retry(conn: &Connection, id: &str) -> Result<RecordingView, RecordingErro
         ));
     }
     conn.execute(
-        "UPDATE recordings SET status = 'pending', attempts = 0 WHERE id = ?1",
+        "UPDATE recordings SET status = 'pending', attempts = 0 WHERE id = ?1 AND status = 'failed'",
         params![id],
     )?;
     require(conn, id)
@@ -430,11 +482,14 @@ pub fn upload_whole(
     data: &[u8],
 ) -> Result<RecordingView, RecordingError> {
     let created = create(conn, device, title, mime)?;
-    if let Err(error) = put_chunk(conn, device, &created.id, 0, data) {
-        let _ = delete(conn, &created.id);
-        return Err(error);
+    let stored = put_chunk(conn, device, &created.id, 0, data)
+        .and_then(|()| finish(conn, device, &created.id, 1));
+    if stored.is_err() {
+        if let Err(e) = delete(conn, &created.id) {
+            tracing::warn!("could not remove a refused upload: {e}");
+        }
     }
-    finish(conn, device, &created.id, 1)
+    stored
 }
 
 /// Where a recording's transcript is, for a Shortcut polling for it.
@@ -452,18 +507,14 @@ pub fn text(conn: &Connection, id: &str) -> Result<RecordingText, RecordingError
     let text = match (&recording.status[..], &recording.meeting_id) {
         ("done", Some(meeting)) => {
             let found = crate::meetings::detail(conn, meeting)?;
-            Some(
-                found
-                    .map(|m| {
-                        m.lines
-                            .iter()
-                            .map(|l| l.text.trim())
-                            .filter(|t| !t.is_empty())
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    })
-                    .unwrap_or_default(),
-            )
+            found.map(|m| {
+                m.lines
+                    .iter()
+                    .map(|l| l.text.trim())
+                    .filter(|t| !t.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            })
         }
         _ => None,
     };
@@ -472,6 +523,23 @@ pub fn text(conn: &Connection, id: &str) -> Result<RecordingText, RecordingError
         text,
         error: recording.error,
     })
+}
+
+/// Deletes recordings a phone started but never finished, once they are a
+/// day old. Returns how many.
+pub fn sweep_abandoned(conn: &mut Connection, now_ms: i64) -> Result<usize> {
+    let tx = conn.transaction()?;
+    tx.execute(
+        "DELETE FROM recording_chunks WHERE recording_id IN
+           (SELECT id FROM recordings WHERE status = 'recording' AND created_at < ?1)",
+        params![now_ms - ABANDONED_AFTER_MS],
+    )?;
+    let removed = tx.execute(
+        "DELETE FROM recordings WHERE status = 'recording' AND created_at < ?1",
+        params![now_ms - ABANDONED_AFTER_MS],
+    )?;
+    tx.commit()?;
+    Ok(removed)
 }
 
 /// Deletes a recording and its audio. The meeting made from it stays.
@@ -701,6 +769,100 @@ mod tests {
             list(&conn, 10).expect("list").len(),
             1,
             "a refused upload leaves nothing"
+        );
+    }
+
+    #[test]
+    fn completing_twice_is_fine_and_a_lost_claim_cannot_complete_or_fail() {
+        let (mut conn, phone, laptop) = setup();
+        let (desktop, _) = devices::register(&conn, "desktop").expect("desktop");
+        let id = recorded(&mut conn, phone);
+        claim(&conn, laptop).expect("claim").expect("waiting");
+        add_meeting(&conn, laptop, "m1");
+        complete(&mut conn, laptop, &id, "m1").expect("complete");
+        assert_eq!(
+            complete(&mut conn, laptop, &id, "m1")
+                .expect("again")
+                .status,
+            "done",
+            "a retried completion after a lost answer succeeds"
+        );
+
+        let other = recorded(&mut conn, phone);
+        claim(&conn, laptop).expect("claim").expect("waiting");
+        conn.execute(
+            "UPDATE recordings SET claimed_at = claimed_at - ?1 WHERE id = ?2",
+            params![CLAIM_TIMEOUT_MS + 1, other],
+        )
+        .expect("age the claim");
+        claim(&conn, desktop.id).expect("claim").expect("lapsed");
+        add_meeting(&conn, laptop, "m2");
+        assert!(matches!(
+            complete(&mut conn, laptop, &other, "m2"),
+            Err(RecordingError::Conflict(_))
+        ));
+        assert!(matches!(
+            fail(&conn, laptop, &other, "too late"),
+            Err(RecordingError::Conflict(_))
+        ));
+        let held = get(&conn, &other).expect("g").expect("f");
+        assert_eq!(held.status, "claimed");
+        assert_eq!(held.attempts, 1, "the lapsed claim counts as an attempt");
+    }
+
+    #[test]
+    fn a_recording_whose_claims_keep_lapsing_is_parked() {
+        let (mut conn, phone, laptop) = setup();
+        let id = recorded(&mut conn, phone);
+        for _ in 0..MAX_ATTEMPTS {
+            claim(&conn, laptop).expect("claim");
+            conn.execute(
+                "UPDATE recordings SET claimed_at = claimed_at - ?1",
+                params![CLAIM_TIMEOUT_MS + 1],
+            )
+            .expect("age the claim");
+        }
+        assert!(claim(&conn, laptop).expect("claim").is_none());
+        assert_eq!(
+            get(&conn, &id).expect("g").expect("f").attempts,
+            MAX_ATTEMPTS - 1
+        );
+    }
+
+    #[test]
+    fn waiting_audio_is_capped_for_all_devices_together() {
+        let (mut conn, phone, _) = setup();
+        let r = create(&conn, phone, "x", "audio/mp4").expect("create");
+        conn.execute(
+            "UPDATE recordings SET bytes = ?1",
+            params![MAX_WAITING_BYTES - 2],
+        )
+        .expect("fill");
+        let other = create(&conn, phone, "y", "audio/mp4").expect("create");
+        assert!(matches!(
+            put_chunk(&mut conn, phone, &other.id, 0, b"abc"),
+            Err(RecordingError::TooLarge)
+        ));
+        assert!(put_chunk(&mut conn, phone, &other.id, 0, b"ab").is_ok());
+        drop(r);
+    }
+
+    #[test]
+    fn abandoned_recordings_are_swept_after_a_day() {
+        let (mut conn, phone, _) = setup();
+        let open = create(&conn, phone, "open", "audio/mp4").expect("create");
+        put_chunk(&mut conn, phone, &open.id, 0, b"abc").expect("chunk");
+        let finished = recorded(&mut conn, phone);
+        let now = now_ms();
+        assert_eq!(sweep_abandoned(&mut conn, now).expect("sweep"), 0);
+        assert_eq!(
+            sweep_abandoned(&mut conn, now + ABANDONED_AFTER_MS + 1).expect("sweep"),
+            1
+        );
+        assert!(get(&conn, &open.id).expect("g").is_none());
+        assert!(
+            get(&conn, &finished).expect("g").is_some(),
+            "finished ones stay"
         );
     }
 
