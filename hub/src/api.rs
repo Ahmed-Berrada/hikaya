@@ -462,8 +462,12 @@ async fn recording_text(
     _device: AuthedDevice,
     Path(id): Path<String>,
 ) -> Result<Json<recordings::RecordingText>, ApiError> {
-    let conn = data_connection(&state)?;
-    Ok(Json(recordings::text(&conn, &id)?))
+    let text = blocking(move || {
+        let conn = data_connection(&state)?;
+        Ok(recordings::text(&conn, &id)?)
+    })
+    .await?;
+    Ok(Json(text))
 }
 
 #[derive(Deserialize)]
@@ -476,10 +480,13 @@ async fn list_recordings(
     _device: AuthedDevice,
     Query(query): Query<ListQuery>,
 ) -> Result<Json<Vec<RecordingView>>, ApiError> {
-    let conn = data_connection(&state)?;
-    Ok(Json(
-        recordings::list(&conn, query.limit.unwrap_or(50)).map_err(ApiError::internal)?,
-    ))
+    let limit = query.limit.unwrap_or(50);
+    let found = blocking(move || {
+        let conn = data_connection(&state)?;
+        recordings::list(&conn, limit).map_err(ApiError::internal)
+    })
+    .await?;
+    Ok(Json(found))
 }
 
 async fn create_recording(
@@ -487,8 +494,16 @@ async fn create_recording(
     AuthedDevice(device): AuthedDevice,
     Json(body): Json<NewRecordingBody>,
 ) -> Result<(StatusCode, Json<RecordingView>), ApiError> {
-    let conn = data_connection(&state)?;
-    let created = recordings::create(&conn, device.id, &body.title, &body.mime)?;
+    let created = blocking(move || {
+        let conn = data_connection(&state)?;
+        Ok(recordings::create(
+            &conn,
+            device.id,
+            &body.title,
+            &body.mime,
+        )?)
+    })
+    .await?;
     Ok((StatusCode::CREATED, Json(created)))
 }
 
@@ -497,11 +512,14 @@ async fn get_recording(
     _device: AuthedDevice,
     Path(id): Path<String>,
 ) -> Result<Json<RecordingView>, ApiError> {
-    let conn = data_connection(&state)?;
-    recordings::get(&conn, &id)
-        .map_err(ApiError::internal)?
-        .map(Json)
-        .ok_or_else(|| RecordingError::NotFound.into())
+    blocking(move || {
+        let conn = data_connection(&state)?;
+        recordings::get(&conn, &id)
+            .map_err(ApiError::internal)?
+            .map(Json)
+            .ok_or_else(|| RecordingError::NotFound.into())
+    })
+    .await
 }
 
 async fn put_recording_chunk(
@@ -526,26 +544,27 @@ async fn finish_recording(
     Path(id): Path<String>,
     Json(body): Json<FinishBody>,
 ) -> Result<Json<RecordingView>, ApiError> {
-    let conn = data_connection(&state)?;
-    Ok(Json(recordings::finish(
-        &conn,
-        device.id,
-        &id,
-        body.chunks,
-    )?))
+    let finished = blocking(move || {
+        let conn = data_connection(&state)?;
+        Ok(recordings::finish(&conn, device.id, &id, body.chunks)?)
+    })
+    .await?;
+    Ok(Json(finished))
 }
 
 async fn claim_recording(
     State(state): State<AppState>,
     AuthedDevice(device): AuthedDevice,
 ) -> Result<Response, ApiError> {
-    let conn = data_connection(&state)?;
-    Ok(
-        match recordings::claim(&conn, device.id).map_err(ApiError::internal)? {
-            Some(recording) => Json(recording).into_response(),
-            None => StatusCode::NO_CONTENT.into_response(),
-        },
-    )
+    let claimed = blocking(move || {
+        let conn = data_connection(&state)?;
+        recordings::claim(&conn, device.id).map_err(ApiError::internal)
+    })
+    .await?;
+    Ok(match claimed {
+        Some(recording) => Json(recording).into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
+    })
 }
 
 async fn recording_audio(
@@ -567,13 +586,17 @@ async fn complete_recording(
     Path(id): Path<String>,
     Json(body): Json<CompleteBody>,
 ) -> Result<Json<RecordingView>, ApiError> {
-    let mut conn = data_connection(&state)?;
-    Ok(Json(recordings::complete(
-        &mut conn,
-        device.id,
-        &id,
-        &body.meeting_id,
-    )?))
+    let completed = blocking(move || {
+        let mut conn = data_connection(&state)?;
+        Ok(recordings::complete(
+            &mut conn,
+            device.id,
+            &id,
+            &body.meeting_id,
+        )?)
+    })
+    .await?;
+    Ok(Json(completed))
 }
 
 async fn fail_recording(
@@ -582,8 +605,12 @@ async fn fail_recording(
     Path(id): Path<String>,
     Json(body): Json<FailBody>,
 ) -> Result<Json<RecordingView>, ApiError> {
-    let conn = data_connection(&state)?;
-    Ok(Json(recordings::fail(&conn, device.id, &id, &body.error)?))
+    let failed = blocking(move || {
+        let conn = data_connection(&state)?;
+        Ok(recordings::fail(&conn, device.id, &id, &body.error)?)
+    })
+    .await?;
+    Ok(Json(failed))
 }
 
 async fn retry_recording(
@@ -591,8 +618,12 @@ async fn retry_recording(
     _device: AuthedDevice,
     Path(id): Path<String>,
 ) -> Result<Json<RecordingView>, ApiError> {
-    let conn = data_connection(&state)?;
-    Ok(Json(recordings::retry(&conn, &id)?))
+    let retried = blocking(move || {
+        let conn = data_connection(&state)?;
+        Ok(recordings::retry(&conn, &id)?)
+    })
+    .await?;
+    Ok(Json(retried))
 }
 
 async fn delete_recording(
@@ -600,8 +631,11 @@ async fn delete_recording(
     _device: AuthedDevice,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let mut conn = data_connection(&state)?;
-    recordings::delete(&mut conn, &id)?;
+    blocking(move || {
+        let mut conn = data_connection(&state)?;
+        Ok(recordings::delete(&mut conn, &id)?)
+    })
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -628,6 +662,9 @@ async fn list_dictations(
     Ok(Json(found))
 }
 
+/// Largest audio body: one chunk, with room for nothing else.
+const AUDIO_BODY_LIMIT: usize = recordings::MAX_CHUNK_BYTES + 1024;
+
 /// Builds the router for a hub with the given state.
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -648,7 +685,10 @@ pub fn router(state: AppState) -> Router {
             get(list_recordings).post(create_recording),
         )
         .route("/api/recordings/claim", post(claim_recording))
-        .route("/api/recordings/upload", post(upload_recording))
+        .route(
+            "/api/recordings/upload",
+            post(upload_recording).layer(DefaultBodyLimit::max(AUDIO_BODY_LIMIT)),
+        )
         .route("/api/recordings/{id}/text", get(recording_text))
         .route(
             "/api/recordings/{id}",
@@ -656,7 +696,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/api/recordings/{id}/chunks/{index}",
-            put(put_recording_chunk),
+            put(put_recording_chunk).layer(DefaultBodyLimit::max(AUDIO_BODY_LIMIT)),
         )
         .route("/api/recordings/{id}/finish", post(finish_recording))
         .route("/api/recordings/{id}/audio", get(recording_audio))

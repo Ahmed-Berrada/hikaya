@@ -17,8 +17,10 @@ use hikaya_core::sync::MeetingLineRecord;
 use rusqlite::{params, Connection, OptionalExtension};
 use std::time::Duration;
 
-/// How often the hub tries the same meeting again after a failure.
-const RETRY_AFTER_MS: i64 = 24 * 60 * 60 * 1000;
+/// How long the hub waits before trying the same meeting again after a
+/// failure. Short enough that an Ollama restart does not leave meetings
+/// unsummarized for a day.
+const RETRY_AFTER_MS: i64 = 60 * 60 * 1000;
 
 /// What answers the summary questions. A trait so tests need no model.
 pub trait Llm {
@@ -284,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_waits_a_day_before_the_next_try() {
+    fn a_failure_waits_an_hour_before_the_next_try() {
         let (mut conn, laptop) = setup();
         push(&mut conn, laptop, "m1", None, 1);
         received_long_ago(&conn);
