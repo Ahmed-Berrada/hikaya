@@ -51,6 +51,8 @@ pub struct SyncStatus {
     pub message: Option<String>,
     /// Dictations, rules and corrections waiting to be sent.
     pub pending: u32,
+    /// Records the hub refused for good and that were set aside.
+    pub refused: u32,
     /// Unix ms of the last successful sync.
     pub last_sync_at: Option<i64>,
 }
@@ -87,18 +89,28 @@ impl SyncWorker {
 
     /// The current status for the UI.
     pub fn status(&self) -> SyncStatus {
-        let (state, message) = self.last.lock().unwrap_or_else(|p| p.into_inner()).clone();
-        let config = self.store.hub_config().ok().flatten();
+        let (mut state, mut message) = self.last.lock().unwrap_or_else(|p| p.into_inner()).clone();
+        // A database problem is an error to show, not "not connected".
+        let config = match self.store.hub_config() {
+            Ok(config) => {
+                if config.is_none() {
+                    state = SyncState::NotConnected;
+                }
+                config
+            }
+            Err(e) => {
+                state = SyncState::Error;
+                message = Some(format!("the sync settings could not be read: {e:#}"));
+                None
+            }
+        };
         SyncStatus {
-            state: if config.is_none() {
-                SyncState::NotConnected
-            } else {
-                state
-            },
+            state,
             url: config.as_ref().map(|c| c.url.clone()),
             device_name: config.map(|c| c.device_name),
             message,
             pending: self.store.pending_count().unwrap_or(0),
+            refused: self.store.refused_count().unwrap_or(0),
             last_sync_at: self.store.last_sync_at().ok().flatten(),
         }
     }
@@ -140,6 +152,10 @@ impl SyncWorker {
                     );
                 }
                 self.set(SyncState::UpToDate, None);
+                if report.more {
+                    // Stopped at the push limit: carry on right away.
+                    self.trigger();
+                }
                 if let Some(app) = &self.app {
                     super::meeting::phone::check(app, &config);
                 }
@@ -166,7 +182,15 @@ impl SyncWorker {
                 () = tokio::time::sleep(INTERVAL) => {},
             }
             if matches!(self.store.hub_config(), Ok(Some(_))) {
-                self.run().await;
+                // A panic in one run must not stop sync for the session.
+                let run = std::panic::AssertUnwindSafe(self.run());
+                if futures_util::FutureExt::catch_unwind(run).await.is_err() {
+                    log::error!("A sync run panicked; the next one starts on schedule");
+                    self.set(
+                        SyncState::Error,
+                        Some("sync stopped unexpectedly; it will try again".into()),
+                    );
+                }
             }
         }
     }
@@ -309,14 +333,25 @@ pub async fn connect(
         config.device_name
     );
 
+    let mut history_error = None;
     if let Some(history) = app.try_state::<Arc<HistoryManager>>() {
         match queue_existing_history(&worker.store, &history).await {
             Ok(count) => log::info!("Queued {count} existing dictation(s) for the hub"),
-            Err(e) => log::error!("Could not queue the existing history: {e:#}"),
+            Err(e) => {
+                log::error!("Could not queue the existing history: {e:#}");
+                history_error = Some(format!(
+                    "connected, but your existing history could not be queued: {e:#}"
+                ));
+            }
         }
     }
     worker.set(SyncState::Waiting, None);
-    Ok(worker.run().await)
+    let status = worker.run().await;
+    if let Some(message) = history_error {
+        worker.set(SyncState::Error, Some(message));
+        return Ok(worker.status());
+    }
+    Ok(status)
 }
 
 /// Unlocks the hub with its passphrase, then syncs.

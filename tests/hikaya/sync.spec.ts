@@ -87,6 +87,23 @@ test.describe("Sync screen", () => {
     await expect(page.getByText("Nothing waiting to be sent")).toBeVisible();
   });
 
+  test("records the hub refused are counted, not hidden", async ({ page }) => {
+    await mockTauri(page, {
+      hub: {
+        state: "up_to_date",
+        url: "https://hub.example.ts.net",
+        device_name: "Laptop",
+        pending: 0,
+        refused: 2,
+        last_sync_at: 1763200000000,
+      },
+    });
+    await openSync(page);
+    await expect(
+      page.getByText("2 items the hub refused were set aside."),
+    ).toBeVisible();
+  });
+
   test("an unreachable hub explains that nothing is lost", async ({ page }) => {
     await mockTauri(page, {
       hub: {

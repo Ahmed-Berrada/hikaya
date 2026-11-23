@@ -66,6 +66,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           device_name: null as string | null,
           message: null as string | null,
           pending: 0,
+          refused: 0,
           last_sync_at: null as number | null,
         },
         hubPassphrase: "correct horse battery staple",

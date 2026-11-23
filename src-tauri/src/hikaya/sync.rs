@@ -24,13 +24,16 @@ use std::time::Duration;
 /// Dictations sent per push. Rules and corrections ride along.
 const DICTATIONS_PER_PUSH: usize = 200;
 /// Meetings sent per push: each carries its whole transcript.
-const MEETINGS_PER_PUSH: usize = 3;
+const MEETINGS_PER_PUSH: usize = 1;
 /// Meetings in these states are finished and can be sent.
 const FINISHED: &str = "('done', 'interrupted')";
 /// Safety stop for one sync run; the rest goes in the next run.
 const MAX_PUSHES_PER_RUN: usize = 20;
 /// How long a request may take before the hub counts as unreachable.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+/// A push that carries a whole meeting transcript may take longer on a slow
+/// link than a batch of dictations.
+const MEETING_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// What went wrong talking to the hub.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,6 +86,10 @@ pub struct SyncReport {
     pub sent_dictations: usize,
     pub sent_rules: usize,
     pub received_rules: usize,
+    /// Records the hub refused for good in this run; they are set aside.
+    pub refused: usize,
+    /// The run stopped at its push limit with records still queued.
+    pub more: bool,
 }
 
 // ---------------------------------------------------------------- storage --
@@ -135,6 +142,18 @@ impl LearningStore {
     /// Saves the connection to a hub.
     pub fn save_hub_config(&self, url: &str, token: &str, device_name: &str) -> Result<HubConfig> {
         let conn = self.conn()?;
+        if setting(&conn, "hub_url")?.as_deref() != Some(url) {
+            // A different hub has none of this device's rules, corrections
+            // or meetings: send them all again, and retry what the old hub
+            // refused.
+            conn.execute_batch(
+                "UPDATE rules SET synced = 0;
+                 UPDATE substitutions SET synced = 0;
+                 UPDATE meetings SET synced = 0, phone_completed = 1
+                   WHERE status IN ('done', 'interrupted');
+                 DELETE FROM sync_refused;",
+            )?;
+        }
         set_setting(&conn, "hub_url", url)?;
         set_setting(&conn, "hub_token", token)?;
         set_setting(&conn, "device_name", device_name)?;
@@ -196,6 +215,66 @@ impl LearningStore {
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
 
+    /// Records the hub refused for good, set aside.
+    pub fn refused_count(&self) -> Result<u32> {
+        let count: i64 =
+            self.conn()?
+                .query_row("SELECT count(*) FROM sync_refused", [], |row| row.get(0))?;
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
+    /// Sets aside a record the hub refused, so it stops blocking the queue.
+    /// An edited rule or meeting is sent again; a dictation leaves the queue
+    /// (it stays in History on this computer).
+    fn set_aside(&self, batch: &PushRequest, reason: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let now = now_ms();
+        let mut note = |kind: &str, uid: &str| {
+            tx.execute(
+                "INSERT INTO sync_refused (kind, uid, reason, at) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT (kind, uid) DO UPDATE SET reason = ?3, at = ?4",
+                params![kind, uid, reason, now],
+            )
+            .map(|_| ())
+        };
+        for d in &batch.dictations {
+            note("dictation", &d.id)?;
+        }
+        for r in &batch.rules {
+            note("rule", &r.id)?;
+        }
+        for s in &batch.substitutions {
+            note("correction", &s.id)?;
+        }
+        for m in &batch.meetings {
+            note("meeting", &m.id)?;
+        }
+        for d in &batch.dictations {
+            tx.execute("DELETE FROM sync_outbox WHERE uid = ?1", params![d.id])?;
+        }
+        for r in &batch.rules {
+            tx.execute(
+                "UPDATE rules SET synced = 2 WHERE uid = ?1 AND updated_at = ?2",
+                params![r.id, r.updated_at],
+            )?;
+        }
+        for s in &batch.substitutions {
+            tx.execute(
+                "UPDATE substitutions SET synced = 2 WHERE uid = ?1",
+                params![s.id],
+            )?;
+        }
+        for m in &batch.meetings {
+            tx.execute(
+                "UPDATE meetings SET synced = 2 WHERE uid = ?1 AND updated_at = ?2",
+                params![m.id, m.updated_at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Unix ms of the last successful sync.
     pub fn last_sync_at(&self) -> Result<Option<i64>> {
         Ok(setting(&self.conn()?, "last_sync_at")?.and_then(|v| v.parse().ok()))
@@ -251,6 +330,17 @@ impl LearningStore {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(PushRequest {
+            dictations,
+            rules,
+            substitutions,
+            meetings: Vec::new(),
+        })
+    }
+
+    /// The next finished meeting to send, in a push of its own.
+    fn next_meetings(&self) -> Result<Vec<MeetingRecord>> {
+        let conn = self.conn()?;
         let finished = conn
             .prepare(&format!(
                 "SELECT id, uid, title, started_at, duration_ms, updated_at, summary FROM meetings
@@ -286,12 +376,7 @@ impl LearningStore {
                 .collect();
             meetings.push(meeting);
         }
-        Ok(PushRequest {
-            dictations,
-            rules,
-            substitutions,
-            meetings,
-        })
+        Ok(meetings)
     }
 
     /// Marks what the hub accepted. A record changed while the push was in
@@ -316,6 +401,15 @@ impl LearningStore {
                 "UPDATE meetings SET synced = 1 WHERE uid = ?1 AND updated_at = ?2",
                 params![m.id, m.updated_at],
             )?;
+        }
+        for uid in batch
+            .rules
+            .iter()
+            .map(|r| &r.id)
+            .chain(batch.meetings.iter().map(|m| &m.id))
+            .chain(batch.substitutions.iter().map(|s| &s.id))
+        {
+            tx.execute("DELETE FROM sync_refused WHERE uid = ?1", params![uid])?;
         }
         // Tombstones the hub has seen are no longer needed here.
         tx.execute("DELETE FROM rules WHERE deleted = 1 AND synced = 1", [])?;
@@ -403,22 +497,40 @@ impl LearningStore {
 pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncReport, HubError> {
     let other = |e: anyhow::Error| HubError::Other(format!("{e:#}"));
     let mut report = SyncReport::default();
-    for _ in 0..MAX_PUSHES_PER_RUN {
+    let mut pushes = 0;
+    // Dictations, rules and corrections first, then meetings one at a time:
+    // a long meeting never holds up a dictation.
+    loop {
+        if pushes >= MAX_PUSHES_PER_RUN {
+            report.more = true;
+            break;
+        }
         let batch = store.next_batch().map_err(other)?;
         if batch.is_empty() {
             break;
         }
-        hub.push(&batch).await?;
-        store.mark_sent(&batch).map_err(other)?;
-        report.sent_dictations += batch.dictations.len();
-        report.sent_rules += batch.rules.len();
-        if batch.meetings.len() < MEETINGS_PER_PUSH
-            && batch.dictations.len() < DICTATIONS_PER_PUSH
-            && batch.rules.len() < 100
-            && batch.substitutions.len() < 100
-        {
+        let full = batch.dictations.len() >= DICTATIONS_PER_PUSH
+            || batch.rules.len() >= 100
+            || batch.substitutions.len() >= 100;
+        pushes += push_or_set_aside(store, hub, batch, &mut report).await?;
+        if !full {
             break;
         }
+    }
+    loop {
+        if pushes >= MAX_PUSHES_PER_RUN {
+            report.more = true;
+            break;
+        }
+        let meetings = store.next_meetings().map_err(other)?;
+        if meetings.is_empty() {
+            break;
+        }
+        let batch = PushRequest {
+            meetings,
+            ..Default::default()
+        };
+        pushes += push_or_set_aside(store, hub, batch, &mut report).await?;
     }
 
     let pulled = hub.pull(store.pull_cursor().map_err(other)?).await?;
@@ -427,6 +539,88 @@ pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncR
     set_setting(&conn, "pull_cursor", &pulled.cursor.to_string()).map_err(other)?;
     set_setting(&conn, "last_sync_at", &now_ms().to_string()).map_err(other)?;
     Ok(report)
+}
+
+/// Pushes a batch. When the hub refuses it for good, sends its records one
+/// by one and sets aside only those it refuses, so one bad record does not
+/// block the rest forever. Returns the number of pushes made.
+async fn push_or_set_aside(
+    store: &LearningStore,
+    hub: &impl HubApi,
+    batch: PushRequest,
+    report: &mut SyncReport,
+) -> Result<usize, HubError> {
+    let other = |e: anyhow::Error| HubError::Other(format!("{e:#}"));
+    let why = match hub.push(&batch).await {
+        Ok(_) => {
+            store.mark_sent(&batch).map_err(other)?;
+            report.count(&batch);
+            return Ok(1);
+        }
+        Err(HubError::Rejected(why)) => why,
+        Err(e) => return Err(e),
+    };
+    let singles = batch.split();
+    if singles.len() == 1 {
+        log::warn!("The hub refused a record; it is set aside: {why}");
+        store.set_aside(&batch, &why).map_err(other)?;
+        report.refused += 1;
+        return Ok(1);
+    }
+    let mut pushes = 1;
+    for single in singles {
+        pushes += 1;
+        match hub.push(&single).await {
+            Ok(_) => {
+                store.mark_sent(&single).map_err(other)?;
+                report.count(&single);
+            }
+            Err(HubError::Rejected(why)) => {
+                log::warn!("The hub refused a record; it is set aside: {why}");
+                store.set_aside(&single, &why).map_err(other)?;
+                report.refused += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(pushes)
+}
+
+impl SyncReport {
+    fn count(&mut self, batch: &PushRequest) {
+        self.sent_dictations += batch.dictations.len();
+        self.sent_rules += batch.rules.len();
+    }
+}
+
+/// A batch cut into pushes of one record each.
+trait Split {
+    fn split(&self) -> Vec<PushRequest>;
+}
+
+impl Split for PushRequest {
+    fn split(&self) -> Vec<PushRequest> {
+        let one = PushRequest::default;
+        self.dictations
+            .iter()
+            .map(|d| PushRequest {
+                dictations: vec![d.clone()],
+                ..one()
+            })
+            .chain(self.rules.iter().map(|r| PushRequest {
+                rules: vec![r.clone()],
+                ..one()
+            }))
+            .chain(self.substitutions.iter().map(|x| PushRequest {
+                substitutions: vec![x.clone()],
+                ..one()
+            }))
+            .chain(self.meetings.iter().map(|m| PushRequest {
+                meetings: vec![m.clone()],
+                ..one()
+            }))
+            .collect()
+    }
 }
 
 // ------------------------------------------------------------ HTTP client --
@@ -664,8 +858,18 @@ impl HttpHub {
 
 impl HubApi for HttpHub {
     async fn push(&self, request: &PushRequest) -> Result<PushResponse, HubError> {
-        self.send(self.http.post(self.url("/api/sync/push")).json(request))
-            .await
+        let timeout = if request.meetings.is_empty() {
+            REQUEST_TIMEOUT
+        } else {
+            MEETING_TIMEOUT
+        };
+        self.send(
+            self.http
+                .post(self.url("/api/sync/push"))
+                .timeout(timeout)
+                .json(request),
+        )
+        .await
     }
 
     async fn pull(&self, since: i64) -> Result<PullResponse, HubError> {
@@ -691,6 +895,9 @@ mod tests {
         rules: Mutex<Vec<(i64, RuleRecord)>>,
         error: Mutex<Option<HubError>>,
         pushes: Mutex<usize>,
+        /// Ids the hub refuses, as the real one refuses an invalid record:
+        /// the whole push fails.
+        refuse: Mutex<Vec<String>>,
     }
 
     impl FakeHub {
@@ -719,6 +926,16 @@ mod tests {
                 return Err(error);
             }
             *self.pushes.lock().expect("lock") += 1;
+            let refused = self.refuse.lock().expect("lock").clone();
+            let ids = request
+                .dictations
+                .iter()
+                .map(|d| &d.id)
+                .chain(request.meetings.iter().map(|m| &m.id))
+                .chain(request.rules.iter().map(|r| &r.id));
+            if let Some(id) = ids.into_iter().find(|id| refused.contains(id)) {
+                return Err(HubError::Rejected(format!("record {id} is invalid")));
+            }
             let mut dictations = self.dictations.lock().expect("lock");
             for d in &request.dictations {
                 match dictations.iter_mut().find(|x| x.id == d.id) {
@@ -953,7 +1170,98 @@ mod tests {
         sync_once(&store, &hub).await.expect("sync");
         assert_eq!(hub.texts().len(), 450);
         assert_eq!(*hub.pushes.lock().expect("lock"), 3);
+        assert!(!sync_once(&store, &hub).await.expect("sync").more);
         assert_eq!(store.pending_count().expect("count"), 0);
+    }
+
+    #[tokio::test]
+    async fn a_refused_dictation_is_set_aside_and_the_others_still_go() {
+        let (_dir, store) = connected();
+        for id in 1..=3 {
+            store
+                .queue_dictation(id, 1000 + id, &format!("dictée {id}"), None)
+                .expect("queue");
+        }
+        store.add_rule("clod", "Claude", "manual").expect("rule");
+        let uid = store.hub_config().expect("c").expect("c").device_uid + "-2";
+        let hub = FakeHub::default();
+        hub.refuse.lock().expect("lock").push(uid);
+
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(report.refused, 1);
+        assert_eq!(hub.texts(), ["dictée 1", "dictée 3"]);
+        assert_eq!(
+            hub.rules.lock().expect("lock").len(),
+            1,
+            "the rule got through"
+        );
+        assert_eq!(store.pending_count().expect("pending"), 0);
+        assert_eq!(store.refused_count().expect("refused"), 1);
+
+        // Nothing is stuck: the next run has nothing to send.
+        let pushes = *hub.pushes.lock().expect("lock");
+        sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(*hub.pushes.lock().expect("lock"), pushes);
+    }
+
+    #[tokio::test]
+    async fn a_hub_that_is_down_is_not_mistaken_for_a_refusal() {
+        let (_dir, store) = connected();
+        store
+            .queue_dictation(1, 1000, "bonjour", None)
+            .expect("queue");
+        let hub = FakeHub::default();
+        hub.fail_with(Some(HubError::Other("502 Bad Gateway".into())));
+        assert!(sync_once(&store, &hub).await.is_err());
+        assert_eq!(store.pending_count().expect("pending"), 1);
+        assert_eq!(store.refused_count().expect("refused"), 0);
+    }
+
+    #[tokio::test]
+    async fn a_run_at_its_push_limit_says_there_is_more() {
+        let (_dir, store) = connected();
+        let total = (MAX_PUSHES_PER_RUN * DICTATIONS_PER_PUSH + 5) as i64;
+        for id in 0..total {
+            store
+                .queue_dictation(id, 1000 + id, &format!("d{id}"), None)
+                .expect("queue");
+        }
+        let hub = FakeHub::default();
+        let first = sync_once(&store, &hub).await.expect("sync");
+        assert!(first.more);
+        let second = sync_once(&store, &hub).await.expect("sync");
+        assert!(!second.more);
+        assert_eq!(hub.texts().len(), total as usize);
+    }
+
+    #[tokio::test]
+    async fn a_new_hub_receives_rules_and_meetings_again() {
+        use crate::hikaya::meeting::store::MeetingStatus;
+        let (_dir, store) = connected();
+        store.add_rule("clod", "Claude", "manual").expect("rule");
+        let id = store
+            .create_meeting("Point", 1_000, false)
+            .expect("meeting");
+        store
+            .set_meeting_status(id, MeetingStatus::Done, 1_000)
+            .expect("done");
+        sync_once(&store, &FakeHub::default()).await.expect("sync");
+        assert_eq!(store.pending_count().expect("pending"), 0);
+
+        // Same hub again (a new token): nothing to resend.
+        store
+            .save_hub_config("http://hub.test", "hky_other", "laptop")
+            .expect("reconnect");
+        assert_eq!(store.pending_count().expect("pending"), 0);
+
+        store
+            .save_hub_config("http://new-hub.test", "hky_new", "laptop")
+            .expect("switch");
+        assert_eq!(store.pending_count().expect("pending"), 2);
+        let new_hub = FakeHub::default();
+        sync_once(&store, &new_hub).await.expect("sync");
+        assert_eq!(new_hub.rules.lock().expect("lock").len(), 1);
+        assert_eq!(new_hub.meetings.lock().expect("lock").len(), 1);
     }
 
     #[tokio::test]

@@ -106,6 +106,17 @@ const MIGRATIONS: &[M] = &[
     CREATE UNIQUE INDEX meetings_phone_recording ON meetings (phone_recording)
         WHERE phone_recording IS NOT NULL;",
     ),
+    // Records the hub refused for good (too large, invalid, not ours): set
+    // aside so they stop blocking everything queued behind them.
+    M::up(
+        "CREATE TABLE sync_refused (
+        kind TEXT NOT NULL,
+        uid TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (kind, uid)
+    );",
+    ),
 ];
 
 /// A replacement rule as stored and as shown in the UI.
