@@ -138,6 +138,9 @@ impl SyncWorker {
         };
         self.set(SyncState::Syncing, None);
         if let Some(app) = &self.app {
+            // Words pulled last time but never applied (a crash, a failed
+            // write) go in first, so they are not mistaken for removals.
+            apply_pending_words(app, &self.store);
             let words = crate::settings::get_settings(app).custom_words;
             if let Err(e) = self.store.note_custom_words(&words) {
                 // Not fatal: the rest still syncs, and the words are compared
@@ -160,7 +163,7 @@ impl SyncWorker {
                     );
                 }
                 if let Some(app) = &self.app {
-                    apply_received_words(app, &report.received_words);
+                    apply_pending_words(app, &self.store);
                 }
                 self.set(SyncState::UpToDate, None);
                 if report.more {
@@ -412,14 +415,20 @@ pub fn start(app: &AppHandle, store: Arc<LearningStore>) {
     });
 }
 
-/// Puts custom-word changes made on other devices into this device's
-/// settings, word by word, so a word the user just typed here is kept.
-fn apply_received_words(app: &AppHandle, changes: &[hikaya_core::sync::WordRecord]) {
-    if changes.is_empty() {
-        return;
-    }
+/// Puts custom-word changes pulled from other devices into this device's
+/// settings, word by word, so a word the user just typed here is kept, then
+/// marks them applied. On failure they stay pending for the next run.
+fn apply_pending_words(app: &AppHandle, store: &LearningStore) {
+    let changes = match store.pending_word_changes() {
+        Ok(changes) if changes.is_empty() => return,
+        Ok(changes) => changes,
+        Err(e) => {
+            log::warn!("Could not read custom-word changes from the hub: {e:#}");
+            return;
+        }
+    };
     let mut settings = crate::settings::get_settings(app);
-    if hikaya_core::sync::apply_word_changes(&mut settings.custom_words, changes) {
+    if hikaya_core::sync::apply_word_changes(&mut settings.custom_words, &changes) {
         let words = settings.custom_words.clone();
         crate::settings::write_settings(app, settings);
         log::info!(
@@ -431,5 +440,9 @@ fn apply_received_words(app: &AppHandle, changes: &[hikaya_core::sync::WordRecor
             "settings-changed",
             serde_json::json!({ "setting": "custom_words", "value": words }),
         );
+    }
+    if let Err(e) = store.mark_words_applied(&changes) {
+        // Harmless: they are applied again next run, which changes nothing.
+        log::warn!("Could not record the applied custom words: {e:#}");
     }
 }

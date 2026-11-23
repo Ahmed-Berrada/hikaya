@@ -120,12 +120,15 @@ const MIGRATIONS: &[M] = &[
     // The custom-words dictionary as last sent to or received from the hub.
     // Handy keeps the list in its settings; comparing the two finds what the
     // user added or removed. A removed word stays as a tombstone until sent.
+    // `applied = 0` marks a change pulled from the hub that is not in the
+    // settings yet, so it is never mistaken for a change the user made.
     M::up(
         "CREATE TABLE custom_words (
         word TEXT PRIMARY KEY,
         updated_at INTEGER NOT NULL,
         deleted INTEGER NOT NULL DEFAULT 0,
-        synced INTEGER NOT NULL DEFAULT 0
+        synced INTEGER NOT NULL DEFAULT 0,
+        applied INTEGER NOT NULL DEFAULT 1
     );",
     ),
 ];

@@ -196,9 +196,11 @@ pub struct PushResponse {
     /// Meetings added or updated.
     #[serde(default)]
     pub meetings: usize,
-    /// Custom-word changes accepted (older ones are ignored).
+    /// Custom-word changes accepted (older ones are ignored). Always present
+    /// from a hub that knows custom words; `None` means an older hub that
+    /// ignored them, so the device must keep them queued.
     #[serde(default)]
-    pub words: usize,
+    pub words: Option<usize>,
 }
 
 /// Answer to `GET /api/sync/pull?since=<cursor>`.

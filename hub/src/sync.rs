@@ -208,7 +208,11 @@ pub fn push(
 ) -> Result<PushResponse, PushError> {
     validate(request)?;
     let tx = conn.transaction().context("starting the push")?;
-    let mut response = PushResponse::default();
+    let mut response = PushResponse {
+        // Always sent, so a device can tell this hub stores custom words.
+        words: Some(0),
+        ..Default::default()
+    };
     for d in &request.dictations {
         response.dictations += usize::from(apply_dictation(&tx, device, d)?);
     }
@@ -233,7 +237,7 @@ pub fn push(
         response.meetings += usize::from(crate::meetings::apply(&tx, device, m)?);
     }
     for w in &request.words {
-        response.words += usize::from(apply_word(&tx, device, w)?);
+        *response.words.get_or_insert(0) += usize::from(apply_word(&tx, device, w)?);
     }
     tx.commit().context("committing the push")?;
     Ok(response)
@@ -590,13 +594,13 @@ mod tests {
             push(&mut conn, phone, &words(vec![removed.clone()]))
                 .expect("phone")
                 .words,
-            1
+            Some(1)
         );
         assert_eq!(
             push(&mut conn, laptop, &words(vec![word("Hikaya", 200, false)]))
                 .expect("stale")
                 .words,
-            0
+            Some(0)
         );
         let changes = pull(&conn, first.cursor).expect("pull");
         assert_eq!(changes.words, vec![removed]);
