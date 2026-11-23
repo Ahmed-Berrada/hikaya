@@ -81,6 +81,8 @@
     "pending_one": "{{count}} modification en attente d'envoi",
     "pending_other": "{{count}} modifications en attente d'envoi",
     "nothingPending": "Rien en attente d'envoi",
+    "refused_one": "{{count}} élément refusé par le hub a été mis de côté. Vos dictées restent dans l'historique de cet ordinateur.",
+    "refused_other": "{{count}} éléments refusés par le hub ont été mis de côté. Vos dictées restent dans l'historique de cet ordinateur.",
     "lastSync": "Dernière synchronisation {{when}}",
     "never": "Jamais synchronisé",
     "address": "Adresse du hub",

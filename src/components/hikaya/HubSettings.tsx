@@ -147,6 +147,11 @@ export const HubSettings: React.FC = () => {
                 : t("hikaya.hub.nothingPending")}
               {" · "}
               {lastSync}
+              {status.refused > 0 && (
+                <span className="block text-warning">
+                  {t("hikaya.hub.refused", { count: status.refused })}
+                </span>
+              )}
             </p>
           )}
         </div>

@@ -81,6 +81,8 @@
     "pending_one": "{{count}} change waiting to be sent",
     "pending_other": "{{count}} changes waiting to be sent",
     "nothingPending": "Nothing waiting to be sent",
+    "refused_one": "{{count}} item the hub refused was set aside. Your dictations stay in History on this computer.",
+    "refused_other": "{{count}} items the hub refused were set aside. Your dictations stay in History on this computer.",
     "lastSync": "Last synced {{when}}",
     "never": "Never synced",
     "address": "Hub address",

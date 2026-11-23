@@ -1899,6 +1899,10 @@ message: string | null;
  */
 pending: number; 
 /**
+ * Records the hub refused for good and that were set aside.
+ */
+refused: number; 
+/**
  * Unix ms of the last successful sync.
  */
 last_sync_at: number | null }
