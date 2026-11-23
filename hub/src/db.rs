@@ -124,6 +124,16 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
     "ALTER TABLE meetings ADD COLUMN hub_summary TEXT;
     ALTER TABLE meetings ADD COLUMN hub_summary_model TEXT;
     ALTER TABLE meetings ADD COLUMN hub_summary_tried_at INTEGER;",
+    // The custom-words dictionary, shared by every device like rules. The
+    // word is its own id; `seq` puts its changes in the pull feed.
+    "CREATE TABLE words (
+        word TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices (id),
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        seq INTEGER NOT NULL
+    );
+    CREATE INDEX words_seq ON words (seq);",
 ];
 
 /// Brings the database to the current schema. Each migration and its version

@@ -1,5 +1,6 @@
-//! Sends this device's dictations, rules and corrections to the hub, and
-//! brings rule changes made on other devices back.
+//! Sends this device's dictations, rules, corrections, meetings and custom
+//! words to the hub, and brings rule and word changes made on other devices
+//! back.
 //!
 //! Dictations are copied into a queue (`sync_outbox`) the moment they are
 //! saved, because Handy prunes its own history. A queued dictation leaves the
@@ -12,8 +13,8 @@
 use super::store::{now_ms, LearningStore};
 use anyhow::{Context, Result};
 use hikaya_core::sync::{
-    DictationRecord, MeetingLineRecord, MeetingRecord, PullResponse, PushRequest, PushResponse,
-    RuleRecord, SubstitutionRecord,
+    clean_word, DictationRecord, MeetingLineRecord, MeetingRecord, PullResponse, PushRequest,
+    PushResponse, RuleRecord, SubstitutionRecord, WordRecord,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -21,8 +22,13 @@ use specta::Type;
 use std::future::Future;
 use std::time::Duration;
 
-/// Dictations sent per push. Rules and corrections ride along.
+/// Dictations sent per push. Rules, corrections and words ride along.
 const DICTATIONS_PER_PUSH: usize = 200;
+/// Rules, corrections and custom words each sent per push, at most.
+const OTHERS_PER_PUSH: usize = 100;
+// A full batch must fit in one push, or the hub refuses it as too large.
+const _: () =
+    assert!(DICTATIONS_PER_PUSH + 3 * OTHERS_PER_PUSH <= hikaya_core::sync::MAX_RECORDS_PER_PUSH);
 /// Meetings sent per push: each carries its whole transcript.
 const MEETINGS_PER_PUSH: usize = 1;
 /// Meetings in these states are finished and can be sent.
@@ -86,6 +92,11 @@ pub struct SyncReport {
     pub sent_dictations: usize,
     pub sent_rules: usize,
     pub received_rules: usize,
+    /// Custom-word changes from other devices, now waiting in the table to
+    /// be applied to the settings (see `pending_word_changes`).
+    pub received_words: usize,
+    /// The hub ignored custom words (it predates them); they stay queued.
+    pub words_unsupported: bool,
     /// Records the hub refused for good in this run; they are set aside.
     pub refused: usize,
     /// The run stopped at its push limit with records still queued.
@@ -149,6 +160,7 @@ impl LearningStore {
             conn.execute_batch(
                 "UPDATE rules SET synced = 0;
                  UPDATE substitutions SET synced = 0;
+                 UPDATE custom_words SET synced = 0;
                  UPDATE meetings SET synced = 0, phone_completed = 1
                    WHERE status IN ('done', 'interrupted');
                  DELETE FROM sync_refused;",
@@ -216,6 +228,65 @@ impl LearningStore {
     }
 
     /// Records the hub refused for good, set aside.
+    /// Compares the custom words in the settings with those last synced, and
+    /// queues what the user added or removed since. Run before each sync.
+    pub fn note_custom_words(&self, words: &[String]) -> Result<()> {
+        let current: std::collections::HashSet<&str> =
+            words.iter().filter_map(|w| clean_word(w)).collect();
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        // Changes pulled from the hub but not yet in the settings are not
+        // the user's doing: leave them for `mark_words_applied`.
+        let known = tx
+            .prepare("SELECT word, deleted, updated_at FROM custom_words WHERE applied = 1")?
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, bool>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let pending = tx
+            .prepare("SELECT word FROM custom_words WHERE applied = 0")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<std::collections::HashSet<_>>>()?;
+        let now = now_ms();
+        // A change made here must beat the version this device last saw,
+        // even when this computer's clock is behind the one that made it.
+        let stamp = |seen: i64| now.max(seen + 1);
+        for (word, deleted, updated_at) in &known {
+            if !deleted && !current.contains(word.as_str()) {
+                tx.execute(
+                    "UPDATE custom_words SET deleted = 1, updated_at = ?2, synced = 0 WHERE word = ?1",
+                    params![word, stamp(*updated_at)],
+                )?;
+            }
+        }
+        for word in current {
+            if pending.contains(word) {
+                continue;
+            }
+            match known.iter().find(|(w, ..)| w == word) {
+                Some((_, false, _)) => {}
+                Some((_, true, updated_at)) => {
+                    tx.execute(
+                        "UPDATE custom_words SET deleted = 0, updated_at = ?2, synced = 0 WHERE word = ?1",
+                        params![word, stamp(*updated_at)],
+                    )?;
+                }
+                None => {
+                    tx.execute(
+                        "INSERT INTO custom_words (word, updated_at, deleted, synced) VALUES (?1, ?2, 0, 0)",
+                        params![word, now],
+                    )?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn refused_count(&self) -> Result<u32> {
         let count: i64 =
             self.conn()?
@@ -230,7 +301,7 @@ impl LearningStore {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let now = now_ms();
-        let mut note = |kind: &str, uid: &str| {
+        let note = |kind: &str, uid: &str| {
             tx.execute(
                 "INSERT INTO sync_refused (kind, uid, reason, at) VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT (kind, uid) DO UPDATE SET reason = ?3, at = ?4",
@@ -249,6 +320,9 @@ impl LearningStore {
         }
         for m in &batch.meetings {
             note("meeting", &m.id)?;
+        }
+        for w in &batch.words {
+            note("word", &w.word)?;
         }
         for d in &batch.dictations {
             tx.execute("DELETE FROM sync_outbox WHERE uid = ?1", params![d.id])?;
@@ -271,6 +345,12 @@ impl LearningStore {
                 params![m.id, m.updated_at],
             )?;
         }
+        for w in &batch.words {
+            tx.execute(
+                "UPDATE custom_words SET synced = 2 WHERE word = ?1 AND updated_at = ?2",
+                params![w.word, w.updated_at],
+            )?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -280,7 +360,7 @@ impl LearningStore {
         Ok(setting(&self.conn()?, "last_sync_at")?.and_then(|v| v.parse().ok()))
     }
 
-    fn next_batch(&self) -> Result<PushRequest> {
+    fn next_batch(&self, with_words: bool) -> Result<PushRequest> {
         let conn = self.conn()?;
         let dictations = conn
             .prepare(
@@ -301,9 +381,9 @@ impl LearningStore {
         let rules = conn
             .prepare(
                 "SELECT uid, pattern, replacement, enabled, source, updated_at, deleted
-                 FROM rules WHERE synced = 0 LIMIT 100",
+                 FROM rules WHERE synced = 0 LIMIT ?1",
             )?
-            .query_map([], |row| {
+            .query_map(params![OTHERS_PER_PUSH as i64], |row| {
                 Ok(RuleRecord {
                     id: row.get(0)?,
                     pattern: row.get(1)?,
@@ -318,9 +398,9 @@ impl LearningStore {
         let substitutions = conn
             .prepare(
                 "SELECT uid, from_text, to_text, created_at FROM substitutions
-                 WHERE synced = 0 LIMIT 100",
+                 WHERE synced = 0 LIMIT ?1",
             )?
-            .query_map([], |row| {
+            .query_map(params![OTHERS_PER_PUSH as i64], |row| {
                 Ok(SubstitutionRecord {
                     id: row.get(0)?,
                     from: row.get(1)?,
@@ -330,11 +410,25 @@ impl LearningStore {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let words = conn
+            .prepare(
+                "SELECT word, updated_at, deleted FROM custom_words
+                 WHERE synced = 0 AND ?1 LIMIT ?2",
+            )?
+            .query_map(params![with_words, OTHERS_PER_PUSH as i64], |row| {
+                Ok(WordRecord {
+                    word: row.get(0)?,
+                    updated_at: row.get(1)?,
+                    deleted: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(PushRequest {
             dictations,
             rules,
             substitutions,
             meetings: Vec::new(),
+            words,
         })
     }
 
@@ -402,6 +496,16 @@ impl LearningStore {
                 params![m.id, m.updated_at],
             )?;
         }
+        for w in &batch.words {
+            tx.execute(
+                "UPDATE custom_words SET synced = 1 WHERE word = ?1 AND updated_at = ?2",
+                params![w.word, w.updated_at],
+            )?;
+            tx.execute(
+                "DELETE FROM sync_refused WHERE kind = 'word' AND uid = ?1",
+                params![w.word],
+            )?;
+        }
         for uid in batch
             .rules
             .iter()
@@ -413,6 +517,10 @@ impl LearningStore {
         }
         // Tombstones the hub has seen are no longer needed here.
         tx.execute("DELETE FROM rules WHERE deleted = 1 AND synced = 1", [])?;
+        tx.execute(
+            "DELETE FROM custom_words WHERE deleted = 1 AND synced = 1 AND applied = 1",
+            [],
+        )?;
         for s in &batch.substitutions {
             tx.execute(
                 "UPDATE substitutions SET synced = 1 WHERE uid = ?1",
@@ -480,6 +588,74 @@ impl LearningStore {
         Ok(applied)
     }
 
+    /// Applies custom-word changes from the hub to the table (the newest
+    /// change wins; an unsent newer local change is kept) and flags them for
+    /// the settings. Returns how many won.
+    fn merge_words(&self, words: &[WordRecord]) -> Result<usize> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let mut applied = 0;
+        for w in words {
+            let local: Option<i64> = tx
+                .query_row(
+                    "SELECT updated_at FROM custom_words WHERE word = ?1",
+                    params![w.word],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match local {
+                Some(updated_at) if updated_at >= w.updated_at => continue,
+                // Never seen here and already removed elsewhere: nothing to do.
+                None if w.deleted => continue,
+                _ => {}
+            }
+            tx.execute(
+                "INSERT INTO custom_words (word, updated_at, deleted, synced, applied)
+                 VALUES (?1, ?2, ?3, 1, 0)
+                 ON CONFLICT (word) DO UPDATE SET updated_at = ?2, deleted = ?3, synced = 1, applied = 0",
+                params![w.word, w.updated_at, w.deleted],
+            )?;
+            applied += 1;
+        }
+        tx.commit()?;
+        Ok(applied)
+    }
+
+    /// Word changes pulled from the hub that the settings do not have yet.
+    /// They survive a crash or a failed run, and are applied on the next.
+    pub fn pending_word_changes(&self) -> Result<Vec<WordRecord>> {
+        Ok(self
+            .conn()?
+            .prepare("SELECT word, updated_at, deleted FROM custom_words WHERE applied = 0")?
+            .query_map([], |row| {
+                Ok(WordRecord {
+                    word: row.get(0)?,
+                    updated_at: row.get(1)?,
+                    deleted: row.get(2)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Records that these pulled changes are now in the settings. A change
+    /// replaced by a newer pull in the meantime stays pending.
+    pub fn mark_words_applied(&self, changes: &[WordRecord]) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for w in changes {
+            tx.execute(
+                "UPDATE custom_words SET applied = 1 WHERE word = ?1 AND updated_at = ?2",
+                params![w.word, w.updated_at],
+            )?;
+        }
+        tx.execute(
+            "DELETE FROM custom_words WHERE deleted = 1 AND synced = 1 AND applied = 1",
+            [],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     fn pull_cursor(&self) -> Result<i64> {
         let stored = setting(&self.conn()?, "pull_cursor")?;
         Ok(match stored.as_deref().map(str::parse::<i64>) {
@@ -505,13 +681,14 @@ pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncR
             report.more = true;
             break;
         }
-        let batch = store.next_batch().map_err(other)?;
+        let batch = store.next_batch(!report.words_unsupported).map_err(other)?;
         if batch.is_empty() {
             break;
         }
         let full = batch.dictations.len() >= DICTATIONS_PER_PUSH
-            || batch.rules.len() >= 100
-            || batch.substitutions.len() >= 100;
+            || batch.rules.len() >= OTHERS_PER_PUSH
+            || batch.substitutions.len() >= OTHERS_PER_PUSH
+            || batch.words.len() >= OTHERS_PER_PUSH;
         pushes += push_or_set_aside(store, hub, batch, &mut report).await?;
         if !full {
             break;
@@ -535,6 +712,7 @@ pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncR
 
     let pulled = hub.pull(store.pull_cursor().map_err(other)?).await?;
     report.received_rules = store.merge_rules(&pulled.rules).map_err(other)?;
+    report.received_words = store.merge_words(&pulled.words).map_err(other)?;
     let conn = store.conn().map_err(other)?;
     set_setting(&conn, "pull_cursor", &pulled.cursor.to_string()).map_err(other)?;
     set_setting(&conn, "last_sync_at", &now_ms().to_string()).map_err(other)?;
@@ -552,7 +730,8 @@ async fn push_or_set_aside(
 ) -> Result<usize, HubError> {
     let other = |e: anyhow::Error| HubError::Other(format!("{e:#}"));
     let why = match hub.push(&batch).await {
-        Ok(_) => {
+        Ok(response) => {
+            let batch = accepted(batch, &response, report);
             store.mark_sent(&batch).map_err(other)?;
             report.count(&batch);
             return Ok(1);
@@ -571,7 +750,8 @@ async fn push_or_set_aside(
     for single in singles {
         pushes += 1;
         match hub.push(&single).await {
-            Ok(_) => {
+            Ok(response) => {
+                let single = accepted(single, &response, report);
                 store.mark_sent(&single).map_err(other)?;
                 report.count(&single);
             }
@@ -584,6 +764,24 @@ async fn push_or_set_aside(
         }
     }
     Ok(pushes)
+}
+
+/// What of a pushed batch the hub really stored. A hub that predates
+/// custom words answers without a `words` count: its words stay queued, and
+/// the rest of this run sends none.
+fn accepted(
+    mut batch: PushRequest,
+    response: &PushResponse,
+    report: &mut SyncReport,
+) -> PushRequest {
+    if response.words.is_none() && !batch.words.is_empty() {
+        if !report.words_unsupported {
+            log::warn!("The hub does not store custom words yet; update it to sync them");
+        }
+        report.words_unsupported = true;
+        batch.words.clear();
+    }
+    batch
 }
 
 impl SyncReport {
@@ -617,6 +815,10 @@ impl Split for PushRequest {
             }))
             .chain(self.meetings.iter().map(|m| PushRequest {
                 meetings: vec![m.clone()],
+                ..one()
+            }))
+            .chain(self.words.iter().map(|w| PushRequest {
+                words: vec![w.clone()],
                 ..one()
             }))
             .collect()
@@ -893,6 +1095,11 @@ mod tests {
         dictations: Mutex<Vec<DictationRecord>>,
         meetings: Mutex<Vec<MeetingRecord>>,
         rules: Mutex<Vec<(i64, RuleRecord)>>,
+        /// Every word the hub holds; a pull returns all of them, which the
+        /// merge must tolerate anyway.
+        words: Mutex<Vec<WordRecord>>,
+        /// Answers like a hub that predates custom words, and keeps none.
+        old: Mutex<bool>,
         error: Mutex<Option<HubError>>,
         pushes: Mutex<usize>,
         /// Ids the hub refuses, as the real one refuses an invalid record:
@@ -932,7 +1139,8 @@ mod tests {
                 .iter()
                 .map(|d| &d.id)
                 .chain(request.meetings.iter().map(|m| &m.id))
-                .chain(request.rules.iter().map(|r| &r.id));
+                .chain(request.rules.iter().map(|r| &r.id))
+                .chain(request.words.iter().map(|w| &w.word));
             if let Some(id) = ids.into_iter().find(|id| refused.contains(id)) {
                 return Err(HubError::Rejected(format!("record {id} is invalid")));
             }
@@ -966,7 +1174,22 @@ mod tests {
                     self.add_remote_rule(r.clone());
                 }
             }
-            Ok(PushResponse::default())
+            let old = *self.old.lock().expect("lock");
+            let mut words = self.words.lock().expect("lock");
+            for w in request.words.iter().filter(|_| !old) {
+                match words.iter_mut().find(|x| x.word == w.word) {
+                    Some(x) if x.updated_at < w.updated_at => *x = w.clone(),
+                    Some(_) => {}
+                    None => words.push(w.clone()),
+                }
+            }
+            if old {
+                return Ok(PushResponse::default());
+            }
+            Ok(PushResponse {
+                words: Some(request.words.len()),
+                ..Default::default()
+            })
         }
 
         async fn pull(&self, since: i64) -> Result<PullResponse, HubError> {
@@ -979,6 +1202,7 @@ mod tests {
             Ok(PullResponse {
                 cursor: changed.iter().map(|(s, _)| *s).max().unwrap_or(since),
                 rules: changed.into_iter().map(|(_, r)| r.clone()).collect(),
+                words: self.words.lock().expect("lock").clone(),
             })
         }
     }
@@ -1373,5 +1597,170 @@ mod tests {
             .device_uid;
         assert_eq!(first, again);
         assert_eq!(first.len(), 16);
+    }
+
+    fn hub_word(word: &str, at: i64, deleted: bool) -> WordRecord {
+        WordRecord {
+            word: word.into(),
+            updated_at: at,
+            deleted,
+        }
+    }
+
+    fn live_hub_words(hub: &FakeHub) -> Vec<String> {
+        let mut words: Vec<String> = hub
+            .words
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|w| !w.deleted)
+            .map(|w| w.word.clone())
+            .collect();
+        words.sort();
+        words
+    }
+
+    /// What the sync worker does with pulled words: put them in the
+    /// settings list, then mark them applied.
+    fn apply_pending(store: &LearningStore, list: &mut Vec<String>) -> usize {
+        let changes = store.pending_word_changes().expect("pending");
+        hikaya_core::sync::apply_word_changes(list, &changes);
+        store.mark_words_applied(&changes).expect("applied");
+        changes.len()
+    }
+
+    #[tokio::test]
+    async fn custom_words_added_and_removed_reach_the_hub() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        store
+            .note_custom_words(&["Hikaya".into(), " Ollama ".into(), "  ".into()])
+            .expect("note");
+        sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(live_hub_words(&hub), ["Hikaya", "Ollama"]);
+
+        store.note_custom_words(&["Hikaya".into()]).expect("note");
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(live_hub_words(&hub), ["Hikaya"]);
+        // The hub's own records of what this device sent change nothing here.
+        assert_eq!(report.received_words, 0);
+        // The tombstone has reached the hub, so it is gone on this device.
+        let left: i64 = store
+            .conn()
+            .expect("conn")
+            .query_row("SELECT count(*) FROM custom_words", [], |r| r.get(0))
+            .expect("count");
+        assert_eq!(left, 1);
+        // Nothing changed: nothing is queued again.
+        store.note_custom_words(&["Hikaya".into()]).expect("note");
+        assert!(store.next_batch(true).expect("batch").words.is_empty());
+    }
+
+    #[tokio::test]
+    async fn custom_words_from_other_devices_come_back_once() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        hub.words.lock().expect("lock").extend([
+            hub_word("Kubernetes", 100, false),
+            hub_word("gone", 100, true),
+        ]);
+        let mut settings: Vec<String> = vec!["Hikaya".into()];
+        store.note_custom_words(&settings).expect("note");
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(report.received_words, 1);
+        assert_eq!(apply_pending(&store, &mut settings), 1);
+        assert_eq!(settings, ["Hikaya", "Kubernetes"]);
+        store.note_custom_words(&settings).expect("note");
+        let again = sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(again.received_words, 0);
+        assert!(store.next_batch(true).expect("batch").words.is_empty());
+
+        // Removed here: the removal is sent.
+        settings.retain(|w| w != "Kubernetes");
+        store.note_custom_words(&settings).expect("note");
+        sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(live_hub_words(&hub), ["Hikaya"]);
+
+        // Added again on another device later: it comes back.
+        hub.words.lock().expect("lock")[0] = hub_word("Kubernetes", now_ms() + 10_000, false);
+        sync_once(&store, &hub).await.expect("sync");
+        apply_pending(&store, &mut settings);
+        assert_eq!(settings, ["Hikaya", "Kubernetes"]);
+    }
+
+    #[tokio::test]
+    async fn a_pulled_word_not_yet_in_the_settings_is_not_taken_for_a_removal() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        hub.words
+            .lock()
+            .expect("lock")
+            .push(hub_word("Kubernetes", 100, false));
+        store.note_custom_words(&[]).expect("note");
+        sync_once(&store, &hub).await.expect("sync");
+        // The run stops here (a crash, a failed write): the settings never
+        // got the word. The next run must not send a removal for it.
+        store.note_custom_words(&[]).expect("note");
+        assert!(store.next_batch(true).expect("batch").words.is_empty());
+        let mut settings = Vec::new();
+        assert_eq!(apply_pending(&store, &mut settings), 1);
+        assert_eq!(settings, ["Kubernetes"]);
+        assert_eq!(live_hub_words(&hub), ["Kubernetes"]);
+    }
+
+    #[tokio::test]
+    async fn a_removal_beats_the_seen_version_even_with_a_slow_clock() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        // Another device, its clock an hour ahead, added the word.
+        let ahead = now_ms() + 3_600_000;
+        hub.words
+            .lock()
+            .expect("lock")
+            .push(hub_word("Kubernetes", ahead, false));
+        let mut settings = Vec::new();
+        sync_once(&store, &hub).await.expect("sync");
+        apply_pending(&store, &mut settings);
+        settings.clear();
+        store.note_custom_words(&settings).expect("note");
+        let batch = store.next_batch(true).expect("batch");
+        assert!(batch.words[0].deleted);
+        assert!(batch.words[0].updated_at > ahead);
+        sync_once(&store, &hub).await.expect("sync");
+        assert!(live_hub_words(&hub).is_empty());
+    }
+
+    #[tokio::test]
+    async fn words_stay_queued_for_a_hub_that_predates_them() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        *hub.old.lock().expect("lock") = true;
+        let many: Vec<String> = (0..150).map(|i| format!("word{i}")).collect();
+        store.note_custom_words(&many).expect("note");
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert!(report.words_unsupported);
+        // One push, not one per batch of 100 until the run's limit.
+        assert_eq!(*hub.pushes.lock().expect("lock"), 1);
+        assert_eq!(store.next_batch(true).expect("batch").words.len(), 100);
+
+        // Once the hub is updated, they all go.
+        *hub.old.lock().expect("lock") = false;
+        sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(live_hub_words(&hub).len(), 150);
+    }
+
+    #[tokio::test]
+    async fn a_refused_word_is_set_aside() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        hub.refuse.lock().expect("lock").push("bad".into());
+        store
+            .note_custom_words(&["bad".into(), "good".into()])
+            .expect("note");
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(report.refused, 1);
+        assert_eq!(live_hub_words(&hub), ["good"]);
+        assert!(store.next_batch(true).expect("batch").words.is_empty());
+        assert_eq!(store.refused_count().expect("count"), 1);
     }
 }

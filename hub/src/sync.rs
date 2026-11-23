@@ -4,6 +4,7 @@
 //!   `updated_at` is newer (a correction made on the device).
 //! - Rules: the newest `updated_at` wins, deletions included. Each accepted
 //!   change gets the next sequence number, which is the pull cursor.
+//! - Custom words: like rules, keyed by the word itself.
 //! - Substitutions: insert once; they never change.
 //!
 //! A device can only overwrite records it created. Ids are global, so a
@@ -11,8 +12,8 @@
 
 use anyhow::{Context, Result};
 use hikaya_core::sync::{
-    DictationRecord, PullResponse, PushRequest, PushResponse, RuleRecord, MAX_RECORDS_PER_PUSH,
-    MAX_TEXT_BYTES,
+    clean_word, DictationRecord, PullResponse, PushRequest, PushResponse, RuleRecord, WordRecord,
+    MAX_RECORDS_PER_PUSH, MAX_TEXT_BYTES,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -81,6 +82,14 @@ fn validate(request: &PushRequest) -> Result<(), PushError> {
     for m in &request.meetings {
         check_id(&m.id)?;
         crate::meetings::validate(m)?;
+    }
+    for w in &request.words {
+        if clean_word(&w.word) != Some(w.word.as_str()) {
+            return Err(PushError::Invalid(
+                w.word.chars().take(64).collect(),
+                "a word is trimmed, 1 to 100 bytes, without control characters".into(),
+            ));
+        }
     }
     for s in &request.substitutions {
         check_id(&s.id)?;
@@ -168,6 +177,29 @@ fn apply_rule(tx: &Transaction<'_>, device: i64, r: &RuleRecord) -> Result<bool,
     Ok(true)
 }
 
+fn apply_word(tx: &Transaction<'_>, device: i64, w: &WordRecord) -> Result<bool, PushError> {
+    let current: Option<i64> = tx
+        .query_row(
+            "SELECT updated_at FROM words WHERE word = ?1",
+            params![w.word],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("reading a word")?;
+    // Shared like rules: the newest change wins, whichever device made it.
+    if current.is_some_and(|updated_at| updated_at >= w.updated_at) {
+        return Ok(false);
+    }
+    let seq = next_seq(tx)?;
+    tx.execute(
+        "INSERT INTO words (word, device_id, updated_at, deleted, seq) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT (word) DO UPDATE SET device_id = ?2, updated_at = ?3, deleted = ?4, seq = ?5",
+        params![w.word, device, w.updated_at, w.deleted, seq],
+    )
+    .context("saving a word")?;
+    Ok(true)
+}
+
 /// Applies a push from `device` in one transaction: all of it or none of it.
 pub fn push(
     conn: &mut Connection,
@@ -176,7 +208,11 @@ pub fn push(
 ) -> Result<PushResponse, PushError> {
     validate(request)?;
     let tx = conn.transaction().context("starting the push")?;
-    let mut response = PushResponse::default();
+    let mut response = PushResponse {
+        // Always sent, so a device can tell this hub stores custom words.
+        words: Some(0),
+        ..Default::default()
+    };
     for d in &request.dictations {
         response.dictations += usize::from(apply_dictation(&tx, device, d)?);
     }
@@ -200,11 +236,15 @@ pub fn push(
     for m in &request.meetings {
         response.meetings += usize::from(crate::meetings::apply(&tx, device, m)?);
     }
+    for w in &request.words {
+        *response.words.get_or_insert(0) += usize::from(apply_word(&tx, device, w)?);
+    }
     tx.commit().context("committing the push")?;
     Ok(response)
 }
 
-/// Rule changes after `since`, oldest first, and the cursor to send next.
+/// Rule and word changes after `since`, oldest first, and the cursor to
+/// send next. Both share one sequence, so one cursor covers them.
 pub fn pull(conn: &Connection, since: i64) -> Result<PullResponse> {
     let mut statement = conn.prepare(
         "SELECT id, pattern, replacement, enabled, source, updated_at, deleted, seq
@@ -233,7 +273,31 @@ pub fn pull(conn: &Connection, since: i64) -> Result<PullResponse> {
             rule
         })
         .collect();
-    Ok(PullResponse { rules, cursor })
+    let mut statement = conn
+        .prepare("SELECT word, updated_at, deleted, seq FROM words WHERE seq > ?1 ORDER BY seq")?;
+    let words = statement
+        .query_map(params![since], |row| {
+            Ok((
+                WordRecord {
+                    word: row.get(0)?,
+                    updated_at: row.get(1)?,
+                    deleted: row.get(2)?,
+                },
+                row.get::<_, i64>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .map(|(word, seq)| {
+            cursor = cursor.max(seq);
+            word
+        })
+        .collect();
+    Ok(PullResponse {
+        rules,
+        words,
+        cursor,
+    })
 }
 
 /// Turns user input into an FTS5 query of quoted word prefixes, so the
@@ -492,6 +556,71 @@ mod tests {
         .expect("delete");
         let after = pull(&conn, changes.cursor).expect("pull");
         assert!(after.rules[0].deleted);
+    }
+
+    fn word(word: &str, at: i64, deleted: bool) -> WordRecord {
+        WordRecord {
+            word: word.into(),
+            updated_at: at,
+            deleted,
+        }
+    }
+
+    #[test]
+    fn words_newest_wins_and_share_the_rule_cursor() {
+        let (mut conn, laptop, phone) = setup();
+        let words = |w: Vec<WordRecord>| PushRequest {
+            words: w,
+            ..Default::default()
+        };
+        push(&mut conn, laptop, &words(vec![word("Hikaya", 100, false)])).expect("push");
+        push(
+            &mut conn,
+            laptop,
+            &PushRequest {
+                rules: vec![rule("r1", 100, "get hub", "GitHub")],
+                ..Default::default()
+            },
+        )
+        .expect("rule");
+        let first = pull(&conn, 0).expect("pull");
+        assert_eq!(first.words, vec![word("Hikaya", 100, false)]);
+        assert_eq!(first.rules.len(), 1);
+        assert_eq!(first.cursor, 2);
+
+        // The phone removes it; the laptop adding it again earlier loses.
+        let removed = word("Hikaya", 300, true);
+        assert_eq!(
+            push(&mut conn, phone, &words(vec![removed.clone()]))
+                .expect("phone")
+                .words,
+            Some(1)
+        );
+        assert_eq!(
+            push(&mut conn, laptop, &words(vec![word("Hikaya", 200, false)]))
+                .expect("stale")
+                .words,
+            Some(0)
+        );
+        let changes = pull(&conn, first.cursor).expect("pull");
+        assert_eq!(changes.words, vec![removed]);
+        assert!(changes.rules.is_empty());
+    }
+
+    #[test]
+    fn untrimmed_or_empty_words_are_refused() {
+        let (mut conn, laptop, _) = setup();
+        for bad in [" padded", "", "tab\there"] {
+            let result = push(
+                &mut conn,
+                laptop,
+                &PushRequest {
+                    words: vec![word(bad, 1, false)],
+                    ..Default::default()
+                },
+            );
+            assert!(matches!(result, Err(PushError::Invalid(..))), "{bad:?}");
+        }
     }
 
     #[test]

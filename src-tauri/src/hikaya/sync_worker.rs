@@ -10,7 +10,7 @@ use serde::Serialize;
 use specta::Type;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Notify;
 
 /// Time between background runs when nothing else triggers one.
@@ -137,6 +137,17 @@ impl SyncWorker {
             }
         };
         self.set(SyncState::Syncing, None);
+        if let Some(app) = &self.app {
+            // Words pulled last time but never applied (a crash, a failed
+            // write) go in first, so they are not mistaken for removals.
+            apply_pending_words(app, &self.store);
+            let words = crate::settings::get_settings(app).custom_words;
+            if let Err(e) = self.store.note_custom_words(&words) {
+                // Not fatal: the rest still syncs, and the words are compared
+                // again next run.
+                log::warn!("Could not queue custom-word changes: {e:#}");
+            }
+        }
         let result = match HttpHub::for_config(&config) {
             Ok(hub) => sync_once(&self.store, &hub).await,
             Err(e) => Err(e),
@@ -150,6 +161,9 @@ impl SyncWorker {
                         report.sent_rules,
                         report.received_rules
                     );
+                }
+                if let Some(app) = &self.app {
+                    apply_pending_words(app, &self.store);
                 }
                 self.set(SyncState::UpToDate, None);
                 if report.more {
@@ -399,4 +413,36 @@ pub fn start(app: &AppHandle, store: Arc<LearningStore>) {
             }
         }
     });
+}
+
+/// Puts custom-word changes pulled from other devices into this device's
+/// settings, word by word, so a word the user just typed here is kept, then
+/// marks them applied. On failure they stay pending for the next run.
+fn apply_pending_words(app: &AppHandle, store: &LearningStore) {
+    let changes = match store.pending_word_changes() {
+        Ok(changes) if changes.is_empty() => return,
+        Ok(changes) => changes,
+        Err(e) => {
+            log::warn!("Could not read custom-word changes from the hub: {e:#}");
+            return;
+        }
+    };
+    let mut settings = crate::settings::get_settings(app);
+    if hikaya_core::sync::apply_word_changes(&mut settings.custom_words, &changes) {
+        let words = settings.custom_words.clone();
+        crate::settings::write_settings(app, settings);
+        log::info!(
+            "Hub sync: {} custom-word change(s) from other devices",
+            changes.len()
+        );
+        // The settings screen reloads on this event.
+        let _ = app.emit(
+            "settings-changed",
+            serde_json::json!({ "setting": "custom_words", "value": words }),
+        );
+    }
+    if let Err(e) = store.mark_words_applied(&changes) {
+        // Harmless: they are applied again next run, which changes nothing.
+        log::warn!("Could not record the applied custom words: {e:#}");
+    }
 }
