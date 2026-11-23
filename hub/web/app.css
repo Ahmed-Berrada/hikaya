@@ -270,3 +270,13 @@ button.record.on {
   gap: 16px;
   margin-top: 4px;
 }
+
+#rec-clock {
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+}
+#rec-clock:empty {
+  display: none;
+}

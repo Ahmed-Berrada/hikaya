@@ -51,6 +51,8 @@ const STRINGS = {
     recordingNow: "Recording",
     partsWaiting: "part(s) not uploaded yet; keep this page open",
     allUploaded: "Everything is uploaded.",
+    pausedUploads: "Uploads wait until this browser is paired again",
+    notUploaded: "Some audio could not be uploaded; see the message above",
     statusRecording: "Interrupted",
     statusUploading: "Uploading",
     statusPending: "Waiting for your computer",
@@ -114,6 +116,10 @@ const STRINGS = {
     recordingNow: "Enregistrement",
     partsWaiting: "partie(s) pas encore envoyée(s) ; gardez cette page ouverte",
     allUploaded: "Tout est envoyé.",
+    pausedUploads:
+      "Les envois attendent que ce navigateur soit de nouveau associé",
+    notUploaded:
+      "Une partie de l'audio n'a pas pu être envoyée ; voir le message ci-dessus",
     statusRecording: "Interrompu",
     statusUploading: "Envoi en cours",
     statusPending: "En attente de votre ordinateur",
@@ -412,20 +418,31 @@ function selectTab(name) {
   void load(false);
 }
 
+let loads = 0; // the newest load wins; an older answer is ignored
+
 async function load(append = false) {
   const params = new URLSearchParams({ limit: String(PAGE) });
   if (query) params.set("q", query);
   if (append && oldest !== null) params.set("before", String(oldest));
+  const mine = ++loads;
+  const which = tab;
+  const fresh = () => mine === loads && which === tab;
   try {
-    if (tab === "record") {
-      renderRecordings(await api("/api/recordings?limit=50"));
+    if (which === "record") {
+      const recordings = await api("/api/recordings?limit=50");
+      if (!fresh()) return;
+      renderRecordings(recordings);
       showError(null);
       return;
     }
-    if (tab === "meetings") {
-      renderMeetings(await api(`/api/meetings?${params}`), append);
+    if (which === "meetings") {
+      const meetings = await api(`/api/meetings?${params}`);
+      if (!fresh()) return;
+      renderMeetings(meetings, append);
     } else {
-      render(await api(`/api/dictations?${params}`), append);
+      const dictations = await api(`/api/dictations?${params}`);
+      if (!fresh()) return;
+      render(dictations, append);
     }
     $("results").hidden = false;
     showError(null);
@@ -522,6 +539,9 @@ async function upload(item) {
       },
       body: item.blob,
       cache: "no-store",
+      // Lets the upload finish if the page is closed; browsers allow it for
+      // bodies under 64 KB, which a 5-second chunk is.
+      keepalive: item.blob.size < 60_000,
     });
   } catch {
     throw new HubError(0, "unreachable", t("unreachable"));
@@ -538,15 +558,19 @@ async function upload(item) {
 
 /** Errors worth retrying: no connection, a locked hub, a busy server. */
 const retryable = (error) =>
-  !error.status ||
-  [408, 423, 429].includes(error.status) ||
-  error.status >= 500;
+  error instanceof HubError &&
+  (error.status === 0 ||
+    [408, 423, 429].includes(error.status) ||
+    error.status >= 500);
+
+let paused = false; // this browser lost its pairing; uploads wait for a new one
+const lost = new Set(); // recordings the hub refused; their audio is gone
 
 async function pump() {
-  if (sending) return;
+  if (sending || paused) return;
   sending = true;
   try {
-    while (outbox.length) {
+    while (outbox.length && !paused) {
       const item = outbox[0];
       try {
         await upload(item);
@@ -554,11 +578,22 @@ async function pump() {
         failures = 0;
         if (item.kind === "finish" && tab === "record") void load(false);
       } catch (error) {
-        if (!retryable(error)) {
-          outbox.shift();
+        if (error.status === 401) {
+          // Keep everything: after pairing again, the uploads resume.
+          paused = true;
+          await handle(error);
+        } else if (!retryable(error)) {
+          // The hub refused this recording (deleted, too large, invalid).
+          // Its other parts would only make a broken file: drop them all,
+          // and say so instead of pretending everything was uploaded.
+          for (let i = outbox.length - 1; i >= 0; i--) {
+            if (outbox[i].id === item.id) outbox.splice(i, 1);
+          }
+          lost.add(item.id);
           showError(error);
         } else {
           failures += 1;
+          if (failures >= 3) showError(error);
           await sleep(Math.min(30_000, 1000 * 2 ** failures));
         }
       }
@@ -573,26 +608,43 @@ async function pump() {
 function showRecorderStatus() {
   $("rec-toggle").textContent = t(active ? "stop" : "start");
   $("rec-toggle").classList.toggle("on", Boolean(active));
+  $("rec-toggle").setAttribute("aria-pressed", String(Boolean(active)));
   $("rec-title").disabled = Boolean(active);
+  // The clock changes every second, so it stays out of the live region,
+  // which would otherwise be read out every second.
+  $("rec-clock").textContent = active ? clock(Date.now() - active.started) : "";
   const waiting = outbox.filter((item) => item.kind === "chunk").length;
   const parts = [];
-  if (active)
-    parts.push(`${t("recordingNow")} ${clock(Date.now() - active.started)}`);
+  if (active) parts.push(t("recordingNow"));
+  if (paused) parts.push(t("pausedUploads"));
   if (waiting) parts.push(`${waiting} ${t("partsWaiting")}`);
+  else if (lost.size) parts.push(t("notUploaded"));
   else if (!active && outbox.length === 0 && $("rec-status").dataset.used)
     parts.push(t("allUploaded"));
-  $("rec-status").textContent = parts.join(" · ");
+  const text = parts.join(" · ");
+  if ($("rec-status").textContent !== text) $("rec-status").textContent = text;
 }
 
 async function keepScreenOn() {
-  if (!active || active.wake || !navigator.wakeLock) return;
+  const recording = active;
+  if (!recording || recording.wake || recording.waking || !navigator.wakeLock)
+    return;
+  recording.waking = true;
   try {
-    active.wake = await navigator.wakeLock.request("screen");
-    active.wake.addEventListener("release", () => {
-      if (active) active.wake = null;
+    const sentinel = await navigator.wakeLock.request("screen");
+    if (active !== recording) {
+      // Stopped while the request was pending.
+      await sentinel.release().catch(() => {});
+      return;
+    }
+    recording.wake = sentinel;
+    sentinel.addEventListener("release", () => {
+      if (recording.wake === sentinel) recording.wake = null;
     });
   } catch {
     /* not allowed here: the hint already asks to keep the screen on */
+  } finally {
+    recording.waking = false;
   }
 }
 
@@ -622,10 +674,17 @@ async function startRecording() {
     throw error;
   }
   const id = created.id;
-  const recorder = new MediaRecorder(stream, {
-    mimeType: type,
-    audioBitsPerSecond: 64_000,
-  });
+  let recorder;
+  try {
+    recorder = new MediaRecorder(stream, {
+      mimeType: type,
+      audioBitsPerSecond: 64_000,
+    });
+  } catch {
+    for (const track of stream.getTracks()) track.stop();
+    await api(`/api/recordings/${id}`, { method: "DELETE" }).catch(() => {});
+    throw new Error(t("noRecorder"));
+  }
   let index = 0;
   recorder.addEventListener("dataavailable", (event) => {
     if (!event.data || event.data.size === 0) return;
@@ -655,7 +714,15 @@ async function startRecording() {
     wake: null,
   };
   $("rec-status").dataset.used = "1";
-  recorder.start(CHUNK_MS);
+  try {
+    recorder.start(CHUNK_MS);
+  } catch {
+    clearInterval(active.timer);
+    active = null;
+    for (const track of stream.getTracks()) track.stop();
+    await api(`/api/recordings/${id}`, { method: "DELETE" }).catch(() => {});
+    throw new Error(t("noRecorder"));
+  }
   await keepScreenOn();
   showRecorderStatus();
   void load(false);
@@ -669,11 +736,12 @@ const RECORDING_STATUS = {
   failed: "statusFailed",
 };
 
-function actionButton(label, run) {
+function actionButton(label, run, title) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "link";
   button.textContent = t(label);
+  if (title) button.setAttribute("aria-label", `${t(label)}: ${title}`);
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
@@ -729,13 +797,15 @@ function renderRecordings(recordings) {
     actions.className = "actions";
     if (r.status === "done" && r.meeting_id) {
       actions.append(
-        actionButton("open", () => openFromRecording(r.meeting_id)),
+        actionButton("open", () => openFromRecording(r.meeting_id), r.title),
       );
     }
     if (r.status === "failed") {
       actions.append(
-        actionButton("retry", () =>
-          api(`/api/recordings/${r.id}/retry`, { method: "POST" }),
+        actionButton(
+          "retry",
+          () => api(`/api/recordings/${r.id}/retry`, { method: "POST" }),
+          r.title,
         ),
       );
     }
@@ -746,20 +816,27 @@ function renderRecordings(recordings) {
       r.chunks > 0
     ) {
       actions.append(
-        actionButton("sendSaved", () =>
-          api(`/api/recordings/${r.id}/finish`, {
-            method: "POST",
-            body: { chunks: r.chunks },
-          }),
+        actionButton(
+          "sendSaved",
+          () =>
+            api(`/api/recordings/${r.id}/finish`, {
+              method: "POST",
+              body: { chunks: r.chunks },
+            }),
+          r.title,
         ),
       );
     }
     if (!live && !uploading.has(r.id)) {
       actions.append(
-        actionButton("delete", async () => {
-          if (!window.confirm(t("confirmDelete"))) return;
-          await api(`/api/recordings/${r.id}`, { method: "DELETE" });
-        }),
+        actionButton(
+          "delete",
+          async () => {
+            if (!window.confirm(t("confirmDelete"))) return;
+            await api(`/api/recordings/${r.id}`, { method: "DELETE" });
+          },
+          r.title,
+        ),
       );
     }
     if (actions.childElementCount) item.append(actions);
@@ -791,6 +868,12 @@ $("rec-toggle").addEventListener("click", async () => {
   }
 });
 $("tab-record").addEventListener("click", () => selectTab("record"));
+// iOS Safari ignores beforeunload and may stop the recorder when the page is
+// hidden: hand over the audio recorded so far, so only seconds can be lost.
+const flushRecording = () => {
+  if (active?.recorder.state === "recording") active.recorder.requestData();
+};
+window.addEventListener("pagehide", flushRecording);
 window.addEventListener("beforeunload", (event) => {
   if (active || outbox.length) {
     event.preventDefault();
@@ -814,6 +897,8 @@ $("pair").addEventListener("submit", async (event) => {
     });
     memoryToken = result.token;
     store.set(result.token);
+    paused = false;
+    void pump();
     await refresh();
   } catch (error) {
     showError(error);
@@ -874,10 +959,15 @@ $("q").setAttribute("aria-label", t("search"));
 $("pair-name").value =
   `${t("defaultName")} ${/iPhone|iPad/.test(navigator.userAgent) ? "iPhone" : ""}`.trim();
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState !== "visible") return;
+  if (document.visibilityState !== "visible") {
+    flushRecording();
+    return;
+  }
   // The screen lock is released when the page is hidden; take it again.
   void keepScreenOn();
-  void refresh();
+  void pump();
+  // Not while recording: a locked hub would hide the Stop button.
+  if (!active) void refresh();
 });
 showRecorderStatus();
 void refresh();

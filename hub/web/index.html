@@ -102,7 +102,13 @@
               maxlength="200"
               autocomplete="off"
           /></label>
-          <button id="rec-toggle" type="button" class="record"></button>
+          <button
+            id="rec-toggle"
+            type="button"
+            class="record"
+            aria-pressed="false"
+          ></button>
+          <p id="rec-clock" class="clock" aria-hidden="true"></p>
           <p id="rec-status" class="hint" role="status"></p>
           <h3 data-t="recordings"></h3>
           <ol id="rec-list"></ol>
