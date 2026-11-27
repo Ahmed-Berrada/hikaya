@@ -1192,6 +1192,9 @@ pub fn run(cli_args: CliArgs) {
                     "transcribe_with_post_process",
                     "CLI",
                 );
+            } else if cli_args.toggle_meeting {
+                // Hikaya: same order as the single-instance callback.
+                hikaya::toggle_meeting(&app_handle);
             }
 
             Ok(())
