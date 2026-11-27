@@ -81,7 +81,7 @@ for _ in $(seq 1 20); do mic_id="$(node_id hikaya-e2e-mic || true)"; [[ -n "$mic
 [[ -n "$mic_id" ]] || die "the virtual microphone did not appear"
 wpctl set-default "$mic_id" || die "could not make the virtual microphone the default"
 
-say "first start, so the app writes its default settings"
+say "first start, to create the data folder and list the models"
 app --list-models >"$WORK/models.txt" 2>&1 || { tail -5 "$WORK/models.txt"; die "the app did not start"; }
 MODEL_ID="$(sed -n "s/^ *✓ *\([^ ]*$MODEL_FILE\) .*/\1/p" "$WORK/models.txt" | head -1)"
 [[ -n "$MODEL_ID" ]] || die "the app did not find $MODEL_FILE in its models folder"
@@ -91,7 +91,9 @@ python3 - "$DATA" "$MODEL_ID" <<'PY'
 import json, sys, pathlib
 data, model = pathlib.Path(sys.argv[1]), sys.argv[2]
 path = data / "settings_store.json"
-store = json.loads(path.read_text())
+# A headless run can exit before the store's autosave writes the defaults.
+# The app fills in whatever is missing, so a partial store is enough.
+store = json.loads(path.read_text()) if path.exists() else {"settings": {}}
 store["settings"].update({
     "onboarding_completed": True,
     "paste_method": "none",          # never type into the desktop

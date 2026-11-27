@@ -59,7 +59,8 @@ python3 - "$DATA" "$MODEL_ID" <<'PY'
 import json, sys, pathlib
 data, model = pathlib.Path(sys.argv[1]), sys.argv[2]
 path = data / "settings_store.json"
-store = json.loads(path.read_text())
+# A headless run can exit before the store's autosave writes the defaults.
+store = json.loads(path.read_text()) if path.exists() else {"settings": {}}
 store["settings"].update({"onboarding_completed": True, "paste_method": "none", "audio_feedback": False,
     "spoken_languages": ["en", "fr"], "selected_language": "en", "selected_model": model,
     "update_checks_enabled": False})
