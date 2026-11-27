@@ -4812,9 +4812,9 @@ dependencies = [
 
 [[package]]
 name = "pulseaudio"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d70623bd7967a9ca4c2ae0e807fc380b291f98480fc037042305ec643a4d3373"
+checksum = "9ba79a4c6904c987cc31fa50e9b750539404511c2dbd9ce95e5e58444177a21e"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
@@ -7410,9 +7410,9 @@ dependencies = [
 
 [[package]]
 name = "transcribe-cpp"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cf6687b4c73890aea4515632afb1586d48998f22f38e02e3cfbcd7d1543cd4a"
+checksum = "e9a420916e10b4f60379da3a576a0a536fd426bae86938c1980d0e41f1c3528c"
 dependencies = [
  "log",
  "serde",
@@ -7422,9 +7422,9 @@ dependencies = [
 
 [[package]]
 name = "transcribe-cpp-sys"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32f94fb1e9a3033101bbd500d02993cfc95e315f24417038fd42f1fd80e1059a"
+checksum = "a6d535f101276d4c81b2169cdaff45b89dfaf86124fa9b1d4730a29277668dc4"
 dependencies = [
  "cmake",
  "serde_json",

@@ -673,21 +673,6 @@ async initializeShortcuts() : Promise<Result<null, string>> {
 }
 },
 /**
- * Clears Handy's macOS grant for `permission` before asking for it. A grant is
- * tied to the app's code signature, so after an update the old entry stays in
- * System Settings without matching the new build: macOS neither honors it nor
- * asks again, and onboarding waits forever (#1618). Only called while the
- * permission reads as not granted, so there is no working grant to lose.
- */
-async resetMacosPermission(permission: MacPermission) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("reset_macos_permission", { permission }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-/**
  * Mark onboarding as finished; called when its last screen closes, so quitting
  * midway resumes the flow.
  */
@@ -1565,10 +1550,6 @@ export type LanguageStatus =
  */
 export type LearnedSubstitution = { from: string; to: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
-/**
- * A macOS privacy permission Handy asks for during onboarding.
- */
-export type MacPermission = "accessibility" | "microphone"
 /**
  * A meeting with its whole transcript.
  */
