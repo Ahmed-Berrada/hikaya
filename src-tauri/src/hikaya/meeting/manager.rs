@@ -273,15 +273,17 @@ impl MeetingManager {
                 log::error!("Meeting {id}: could not mark it done: {e:#}");
             }
             log::info!("Meeting {id} finished ({} s)", length / 1000);
+            if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
+                sync.trigger();
+            }
+            MeetingManager::emit(&app, id);
             // Beta: split the other people's track by voice. The transcript
-            // is already there; this only improves it.
+            // is already shown and synced; this only improves it, and it
+            // runs before old audio is pruned, since it needs this meeting's.
             if running.info.system_audio.is_some() && store.prefs().tell_speakers_apart {
                 if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                     split_speakers(&app, &store, &meetings, id, &running.info.title);
                 }
-            }
-            if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
-                sync.trigger();
             }
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 if let Err(e) = meetings.prune_audio() {

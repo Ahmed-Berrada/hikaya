@@ -66,8 +66,11 @@ const FILES: &[(&str, &str)] = &[
 /// Meetings shorter than this are not worth splitting.
 const MIN_TRACK_SECONDS: usize = 20;
 /// Longer tracks are not split: the whole track is held in memory (about
-/// 230 MB an hour) while the model works.
-const MAX_TRACK_SECONDS: usize = 3 * 60 * 60;
+/// 230 MB an hour, plus the model's own copies) while the model works.
+const MAX_TRACK_SECONDS: usize = 90 * 60;
+/// A split that keeps less of the original words than this lost speech the
+/// separation missed; the original lines are kept instead.
+const MIN_KEPT_WORDS: f64 = 0.6;
 
 /// One split at a time: it is heavy on the CPU, and a second meeting can
 /// wait for the first.
@@ -96,8 +99,13 @@ fn ensure_models(app: &AppHandle) -> Result<PathBuf> {
         }
         let url = format!("https://huggingface.co/{REPO}/resolve/{REVISION}/{name}");
         log::info!("Downloading the speaker model file {name}");
+        // Called from a plain thread, never from inside the async runtime.
         let bytes = tauri::async_runtime::block_on(async {
-            let response = reqwest::get(&url).await?.error_for_status()?;
+            let client = reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .timeout(std::time::Duration::from_secs(300))
+                .build()?;
+            let response = client.get(&url).send().await?.error_for_status()?;
             response.bytes().await
         })
         .with_context(|| format!("downloading {name}"))?;
@@ -165,12 +173,25 @@ fn separate(audio: &[f32], models: &Path) -> Result<Vec<hikaya_core::diarize::Tu
 /// transcript is left as it was.
 pub fn split(app: &AppHandle, store: &LearningStore, id: i64, audio_dir: &Path) -> Result<u32> {
     let _one_at_a_time = BUSY.lock().unwrap_or_else(|e| e.into_inner());
+    // Only a finished meeting: while one records or transcribes, its track is
+    // still growing and new lines would land beside the split ones.
+    let status = store
+        .meeting_detail(id)?
+        .ok_or_else(|| anyhow!("no such meeting"))?
+        .meeting
+        .status;
+    if !matches!(
+        status,
+        super::store::MeetingStatus::Done | super::store::MeetingStatus::Interrupted
+    ) {
+        bail!("the meeting is not finished yet");
+    }
     let audio = read_track(audio_dir)?;
     if audio.len() < MIN_TRACK_SECONDS * SAMPLE_RATE as usize {
         return Ok(0);
     }
     if audio.len() > MAX_TRACK_SECONDS * SAMPLE_RATE as usize {
-        bail!("the meeting is longer than three hours");
+        bail!("the meeting is longer than 90 minutes");
     }
     let models = ensure_models(app)?;
     let started = std::time::Instant::now();
@@ -215,9 +236,19 @@ pub fn split(app: &AppHandle, store: &LearningStore, id: i64, audio_dir: &Path) 
             voice: Some(turn.voice),
         });
     }
-    if lines.is_empty() {
-        // Nothing came out of the turns: keep the transcript as it was.
-        bail!("no turn could be transcribed");
+    let words = |lines: &mut dyn Iterator<Item = &TranscriptLine>| -> usize {
+        lines.map(|l| l.text.split_whitespace().count()).sum()
+    };
+    let before = words(
+        &mut store
+            .meeting_lines(id)?
+            .iter()
+            .filter(|l| l.speaker == Speaker::Others),
+    );
+    let after = words(&mut lines.iter());
+    if lines.is_empty() || (after as f64) < MIN_KEPT_WORDS * before as f64 {
+        // The turns missed speech the first pass had: keep the transcript.
+        bail!("the split kept {after} of {before} words; the transcript was kept as it was");
     }
     store.replace_track_lines(id, Speaker::Others, &lines)?;
     Ok(voices)

@@ -376,6 +376,12 @@ impl LearningStore {
             "DELETE FROM meeting_lines WHERE meeting_id = ?1 AND speaker = ?2",
             params![id, speaker.as_str()],
         )?;
+        // A new split numbers the voices afresh, so an old name could land
+        // on another person.
+        tx.execute(
+            "DELETE FROM meeting_voices WHERE meeting_id = ?1",
+            params![id],
+        )?;
         for line in lines.iter().filter(|l| !l.text.trim().is_empty()) {
             tx.execute(
                 "INSERT INTO meeting_lines (meeting_id, start_ms, end_ms, speaker, text, voice)
@@ -487,6 +493,12 @@ mod tests {
             }]
         );
         store.rename_voice(id, 2, "").expect("unname");
+        assert!(store.voice_names(id).expect("names").is_empty());
+        // Splitting again forgets the names: the numbers may mean others.
+        store.rename_voice(id, 1, "Marc").expect("name");
+        store
+            .replace_track_lines(id, Speaker::Others, &split)
+            .expect("again");
         assert!(store.voice_names(id).expect("names").is_empty());
     }
 
