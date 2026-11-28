@@ -43,9 +43,9 @@ Ship a small version, use it daily, then fix what hurts. Each phase ends with a 
 
 ## Phases
 
-Status as of 2026-11-27: v0.1–v0.4 and phone recording (v0.5) are built and tested on Linux; 0.4.1
-is the build waiting for the first Windows test. The hub runs on the owner's home server. Model
-accuracy is measured in [BASELINE.md](BASELINE.md).
+Status as of 2026-11-28: v0.1–v0.4, phone recording (v0.5) and Flow-grade dictation (v0.6) are
+built and tested on Linux; 0.5.0 is the build waiting for the first Windows test. The hub runs on
+the owner's home server. Model accuracy is measured in [BASELINE.md](BASELINE.md).
 
 ### v0.1: Dictation baseline (done)
 
@@ -101,7 +101,7 @@ check.
   (`scripts/hikaya/e2e-phone.sh`); still to check on a real iPhone.
 - iOS Shortcut: record, send to the hub, copy the result to the clipboard.
 
-### v0.6: Dictation that keeps up with Wispr Flow
+### v0.6: Dictation that keeps up with Wispr Flow (done, in 0.5.0)
 
 What still separates Hikaya's dictation from the best cloud tools, all done locally:
 
