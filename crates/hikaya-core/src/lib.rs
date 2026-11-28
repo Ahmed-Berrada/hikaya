@@ -8,6 +8,7 @@ pub mod command;
 pub mod commands;
 pub mod context;
 pub mod corrections;
+pub mod diarize;
 pub mod faithful;
 pub mod fillers;
 pub mod language;

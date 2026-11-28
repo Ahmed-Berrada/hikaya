@@ -136,10 +136,13 @@ pub struct MeetingLineRecord {
     pub start_ms: i64,
     /// End, in milliseconds from the start of the meeting.
     pub end_ms: i64,
-    /// `you` or `others`.
+    /// `you`, `others` or `room`.
     pub speaker: String,
     /// What was said.
     pub text: String,
+    /// The voice within the track, when it was split by speaker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<u32>,
 }
 
 /// A finished meeting with its whole transcript. Pushing it again with a
