@@ -43,6 +43,8 @@ def complete(base_url, model, content, timeout):
 def check(case, output):
     folded = output.casefold().replace("’", "'")
     missing = [p for p in case["keep"] if p.casefold() not in folded]
+    # Case matters here: a terminal command must not come back capitalized.
+    missing += [p for p in case.get("keep_exact", []) if p not in output]
     leaked = [p for p in case["drop"] if p.casefold() in folded]
     return missing, leaked
 
@@ -64,7 +66,10 @@ def main():
         started = time.monotonic()
         try:
             vocabulary = ", ".join(case.get("vocabulary", [])) or "(none)"
-            prompt = template.replace("${vocabulary}", vocabulary).replace("${output}", case["input"])
+            # As the app does: the line about the target app, or nothing.
+            context = case.get("context", "")
+            template_ctx = template.replace("${context}", context) if context else template.replace("${context}\n\n", "").replace("${context}", "")
+            prompt = template_ctx.replace("${vocabulary}", vocabulary).replace("${output}", case["input"])
             output = complete(args.base_url, args.model, prompt, args.timeout)
             missing, leaked = check(case, output)
         except Exception as error:  # network or model failure counts as a failed case

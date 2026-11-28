@@ -39,6 +39,9 @@ Open Notepad and use the transcribe shortcut.
 - [ ] Voice commands: "Hi Sarah, new line, thanks" types two lines; "I'll call you Monday. Delete
       that. I'll call you Tuesday." types only the last sentence; "À la ligne" and "supprime ça" do
       the same in French. "I added a new line of code" stays as words.
+- [ ] With the AI cleanup on, dictate "ok sounds good see you tomorrow" into Slack (or Teams): no
+      final period. Dictate "git status" into Windows Terminal: it stays lowercase. Learning →
+      "Adapt to the app" off: both come out as in Notepad.
 
 ## Learning
 
