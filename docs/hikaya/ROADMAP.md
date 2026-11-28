@@ -113,8 +113,10 @@ What still separates Hikaya's dictation from the best cloud tools, all done loca
   commands in a terminal, code words kept in an editor. Email and documents keep the default
   cleanup: a line asking for "complete sentences" made the small model translate. Done; to try on
   Windows.
-- **Command mode**: select text, hold a shortcut and say what to do ("make it shorter", "traduis
-  en anglais"); the selection is replaced by the result, with the local model.
+- **Command mode**: select text, hold the command shortcut (Win+Alt+Space by default) and say
+  what to do ("make it shorter", "traduis en anglais"); the selection is replaced by the result,
+  with the AI model chosen in Post Processing. A result in another language than the text, when no
+  translation was asked, is refused. Done; checked with `eval/command/`, to try on Windows.
 - **Snippets**: a short spoken cue ("my address") types a saved text.
 
 ## Evaluation data
