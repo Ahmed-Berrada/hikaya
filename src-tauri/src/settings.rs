@@ -997,6 +997,22 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_post_process_shortcut.to_string(),
         },
     );
+    // Hikaya: command mode. Win+Alt+Space has no meaning in Windows, unlike
+    // Ctrl+Alt (AltGr on French keyboards) or Alt+Shift (switches layouts).
+    #[cfg(target_os = "macos")]
+    let hikaya_command_shortcut = "ctrl+option+space";
+    #[cfg(not(target_os = "macos"))]
+    let hikaya_command_shortcut = "super+alt+space";
+    bindings.insert(
+        crate::hikaya::command_mode::BINDING.to_string(),
+        ShortcutBinding {
+            id: crate::hikaya::command_mode::BINDING.to_string(),
+            name: "Command Mode".to_string(),
+            description: "Select text, hold this and say what to do with it.".to_string(),
+            default_binding: hikaya_command_shortcut.to_string(),
+            current_binding: hikaya_command_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {

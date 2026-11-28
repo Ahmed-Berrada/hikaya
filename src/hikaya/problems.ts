@@ -11,7 +11,11 @@ import { notify } from "@/stores/noticeStore";
 export type ProblemKind =
   | "sync_queue"
   | "meeting_incomplete"
-  | "phone_recording";
+  | "phone_recording"
+  | "command_no_selection"
+  | "command_no_model"
+  | "command_failed"
+  | "command_translated";
 
 export interface Problem {
   kind: ProblemKind;

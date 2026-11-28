@@ -462,6 +462,10 @@ pub(crate) async fn process_transcription_output(
     transcription: &str,
     post_process: bool,
 ) -> ProcessedTranscription {
+    // Hikaya: in command mode the words are an instruction for the selection.
+    if crate::hikaya::target::is_command() {
+        return crate::hikaya::command_mode::process(app, transcription).await;
+    }
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
     let mut post_processed_text: Option<String> = None;
@@ -752,10 +756,10 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
-        // Hikaya: this dictation's target app, noted when it started.
-        let target = crate::hikaya::target::take(&binding_id);
+        // Hikaya: this dictation's target app and mode, noted when it started.
+        let session = crate::hikaya::target::take(&binding_id);
 
-        tauri::async_runtime::spawn(crate::hikaya::target::scoped(target, async move {
+        tauri::async_runtime::spawn(crate::hikaya::target::scoped(session, async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
             debug!(
                 "Starting async transcription task for binding: {}",
@@ -1126,6 +1130,13 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    // Hikaya: command mode is a post-processed dictation whose words edit the selection.
+    map.insert(
+        crate::hikaya::command_mode::BINDING.to_string(),
+        Arc::new(crate::hikaya::command_mode::CommandAction(Arc::new(
+            TranscribeAction { post_process: true },
+        ))) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
