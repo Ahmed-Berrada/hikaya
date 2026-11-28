@@ -5,6 +5,7 @@
 
 pub mod audio;
 pub mod commands;
+pub mod context;
 pub mod corrections;
 pub mod faithful;
 pub mod fillers;
