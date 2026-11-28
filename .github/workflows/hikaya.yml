@@ -234,7 +234,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [crates/hikaya-core, crates/hikaya-capture, crates/hikaya-foreground, hub]
+        crate:
+          [
+            crates/hikaya-core,
+            crates/hikaya-capture,
+            crates/hikaya-foreground,
+            hub,
+          ]
     steps:
       - uses: actions/checkout@v5
 
