@@ -115,7 +115,7 @@ pub fn understand(foreground: &Foreground) -> Target {
     if BROWSERS.contains(&process.as_str()) {
         // Browsers end the title with their own name: "Inbox - Gmail - Google Chrome".
         let title = foreground.title.to_lowercase();
-        let parts: Vec<&str> = segments(&title).into_iter().map(strip_counter).collect();
+        let parts = app_segments(&title);
         for (key, display, kind) in TITLES {
             if parts.contains(key) {
                 return Target {
@@ -135,6 +135,41 @@ pub fn understand(foreground: &Foreground) -> Target {
         app: process,
         kind,
     }
+}
+
+/// Browser names as they end a window title.
+const BROWSER_TITLES: &[&str] = &[
+    "google chrome",
+    "chromium",
+    "microsoft edge",
+    "microsoft\u{200b} edge",
+    "mozilla firefox",
+    "firefox",
+    "brave",
+    "opera",
+    "vivaldi",
+    "arc",
+    "zen browser",
+];
+
+/// The segments of a browser title that can name a web app: the browser's
+/// own name dropped, then the last two, never the first (that is the page's
+/// title, so "Discord - Wikipedia" is not Discord), unless it is all there
+/// is ("(3) WhatsApp"). Two, because Edge adds a profile name at the end.
+fn app_segments(title: &str) -> Vec<&str> {
+    let mut parts: Vec<&str> = segments(title).into_iter().map(strip_counter).collect();
+    while parts.len() > 1
+        && parts
+            .last()
+            .is_some_and(|last| BROWSER_TITLES.contains(last))
+    {
+        parts.pop();
+    }
+    if parts.len() == 1 {
+        return parts;
+    }
+    let skip = parts.len().saturating_sub(2).max(1);
+    parts.into_iter().skip(skip).collect()
 }
 
 /// A browser title cut at its separators: "Inbox - Gmail | x" → ["Inbox", "Gmail", "x"].
@@ -248,6 +283,13 @@ mod tests {
         ));
         assert_eq!(page.kind, AppKind::Other);
         assert_eq!(page.app, "firefox");
+        let wiki = understand(&fg("chrome.exe", "Discord - Wikipedia - Google Chrome"));
+        assert_eq!(wiki.kind, AppKind::Other);
+        let edge = understand(&fg(
+            "msedge.exe",
+            "Inbox - you@example.com - Gmail - Personal - Microsoft Edge",
+        ));
+        assert_eq!(edge.app, "gmail");
         let video = understand(&fg("chrome.exe", "gmail tips - YouTube - Google Chrome"));
         assert_eq!(video.kind, AppKind::Other);
         let whatsapp = understand(&fg("brave.exe", "(3) WhatsApp - Brave"));
