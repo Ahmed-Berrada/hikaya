@@ -730,6 +730,37 @@ impl LearningStore {
             )?;
             applied += 1;
         }
+        // Two devices may each have made the same cue: keep the newest, and
+        // delete the others everywhere, so one cue types one text.
+        let live = tx
+            .prepare("SELECT uid, cue, updated_at FROM snippets WHERE deleted = 0")?
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut newest: std::collections::HashMap<String, (i64, String)> =
+            std::collections::HashMap::new();
+        for (uid, cue, updated_at) in &live {
+            let key = hikaya_core::snippets::normalize_cue(cue);
+            let entry = newest.entry(key).or_insert((*updated_at, uid.clone()));
+            if (*updated_at, uid) > (entry.0, &entry.1) {
+                *entry = (*updated_at, uid.clone());
+            }
+        }
+        for (uid, cue, _) in &live {
+            let key = hikaya_core::snippets::normalize_cue(cue);
+            if newest.get(&key).is_some_and(|(_, keep)| keep != uid) {
+                tx.execute(
+                    "UPDATE snippets SET deleted = 1, updated_at = max(?1, updated_at + 1), synced = 0
+                     WHERE uid = ?2",
+                    params![now_ms(), uid],
+                )?;
+            }
+        }
         tx.execute("DELETE FROM snippets WHERE deleted = 1 AND synced = 1", [])?;
         tx.commit()?;
         Ok(applied)
@@ -1939,5 +1970,36 @@ mod tests {
             store.next_batch(true, true).expect("batch").snippets.len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn the_same_cue_made_on_two_devices_ends_as_one() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        store.save_snippet("my address", "Here").expect("save");
+        sync_once(&store, &hub).await.expect("sync");
+        // Another device made the same cue, later, with its own id.
+        hub.snippets.lock().expect("lock").push(SnippetRecord {
+            id: "other".into(),
+            cue: "My Address".into(),
+            text: "There".into(),
+            updated_at: now_ms() + 10_000,
+            deleted: false,
+        });
+        sync_once(&store, &hub).await.expect("sync");
+        let list = store.list_snippets().expect("list");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].text, "There");
+        // The older one is deleted on the hub too, so every device agrees.
+        sync_once(&store, &hub).await.expect("sync");
+        let live: Vec<_> = hub
+            .snippets
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|x| !x.deleted)
+            .map(|x| x.id.clone())
+            .collect();
+        assert_eq!(live, ["other"]);
     }
 }

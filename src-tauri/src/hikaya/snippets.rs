@@ -23,8 +23,9 @@ impl LearningStore {
     /// Every snippet except deleted ones, by cue.
     pub fn list_snippets(&self) -> Result<Vec<StoredSnippet>> {
         let conn = self.conn()?;
-        let mut statement = conn
-            .prepare("SELECT uid, cue, text FROM snippets WHERE deleted = 0 ORDER BY lower(cue)")?;
+        let mut statement = conn.prepare(
+            "SELECT uid, cue, text FROM snippets WHERE deleted = 0 ORDER BY lower(cue), uid",
+        )?;
         let snippets = statement
             .query_map([], |row| {
                 Ok(StoredSnippet {

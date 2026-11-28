@@ -86,7 +86,11 @@ fn validate(request: &PushRequest) -> Result<(), PushError> {
     }
     for s in &request.snippets {
         check_id(&s.id)?;
-        if !s.deleted && !hikaya_core::snippets::valid(&s.cue, &s.text) {
+        // A tombstone is served to every device too, so it has the same
+        // size limits; only a live snippet needs a cue and a text.
+        let fits = s.cue.len() <= hikaya_core::snippets::MAX_CUE_BYTES
+            && s.text.len() <= hikaya_core::snippets::MAX_TEXT_BYTES;
+        if !fits || (!s.deleted && !hikaya_core::snippets::valid(&s.cue, &s.text)) {
             return Err(PushError::Invalid(
                 s.id.clone(),
                 "a snippet needs a cue of at most 100 bytes and a text of at most 4000".into(),

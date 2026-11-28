@@ -24,7 +24,9 @@ pub struct Snippet {
 /// single spaces. Empty when nothing is left.
 pub fn normalize_cue(cue: &str) -> String {
     let words: Vec<String> = cue
-        .split(|c: char| !(c.is_alphanumeric() || c == '\''))
+        // The same word characters as `words`, typographic apostrophe
+        // included, so "l’adresse" stays one word on both sides.
+        .split(|c: char| !(c.is_alphanumeric() || c == '\'' || c == '’'))
         .filter(|w| !w.is_empty())
         .map(|w| w.chars().map(fold).collect())
         .collect();
@@ -173,6 +175,14 @@ mod tests {
         assert_eq!(expand("A signal and a design", &s), "A signal and a design");
         let s = [snippet("adresse", "X")];
         assert_eq!(expand("Mon adrèsse", &s), "Mon X");
+    }
+
+    #[test]
+    fn a_typographic_apostrophe_matches_either_way() {
+        let s = [snippet("l’adresse", "X")];
+        assert_eq!(expand("Envoie à l'adresse.", &s), "Envoie à X");
+        let s = [snippet("l'adresse", "X")];
+        assert_eq!(expand("Envoie à l’adresse", &s), "Envoie à X");
     }
 
     #[test]
