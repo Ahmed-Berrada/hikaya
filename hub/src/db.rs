@@ -134,6 +134,17 @@ const MIGRATIONS: &[&str] = &["CREATE TABLE devices (
         seq INTEGER NOT NULL
     );
     CREATE INDEX words_seq ON words (seq);",
+    // Snippets (a spoken cue that types a saved text), shared like rules.
+    "CREATE TABLE snippets (
+        id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices (id),
+        cue TEXT NOT NULL,
+        text TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        seq INTEGER NOT NULL
+    );
+    CREATE INDEX snippets_seq ON snippets (seq);",
 ];
 
 /// Brings the database to the current schema. Each migration and its version

@@ -46,6 +46,9 @@ Open Notepad and use the transcribe shortcut.
       the selection is replaced by a shorter one. Select a French sentence and say "translate to
       English": it is replaced in English. With nothing selected, the footer says "No Text
       Selected" and nothing is typed. The clipboard holds what it held before.
+- [ ] Snippets: Learning → Snippets, save "my address" with two lines. Dictate "send it to my
+      address" into Notepad: both lines are typed. It appears on the hub's other computers after
+      a sync.
 
 ## Learning
 

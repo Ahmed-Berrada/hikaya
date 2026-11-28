@@ -57,6 +57,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       const state = {
         rules: [] as Rule[],
         prefs: { voice_commands: true, adapt_to_app: true },
+        snippets: [] as { id: string; cue: string; text: string }[],
         proposals: [...proposals],
         nextId: 1,
         calls: [] as { cmd: string; args: unknown }[],
@@ -135,6 +136,16 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           state.proposals = state.proposals.filter(
             (p) => p.pattern !== pattern,
           );
+          return null;
+        },
+        hikaya_list_snippets: () => state.snippets,
+        hikaya_save_snippet: ({ cue, text }) => {
+          const snippet = { id: `s${state.nextId++}`, cue, text };
+          state.snippets.push(snippet);
+          return snippet;
+        },
+        hikaya_delete_snippet: ({ id }) => {
+          state.snippets = state.snippets.filter((s) => s.id !== id);
           return null;
         },
         hikaya_get_prefs: () => state.prefs,

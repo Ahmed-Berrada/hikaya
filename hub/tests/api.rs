@@ -402,7 +402,7 @@ async fn two_devices_sync_dictations_and_rules_through_the_hub() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(
         body,
-        json!({ "dictations": 1, "rules": 1, "substitutions": 1, "meetings": 0, "words": 0 })
+        json!({ "dictations": 1, "rules": 1, "substitutions": 1, "meetings": 0, "words": 0, "snippets": 0 })
     );
 
     // The phone receives the rule.

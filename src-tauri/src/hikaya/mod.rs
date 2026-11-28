@@ -10,6 +10,7 @@ pub mod command_mode;
 pub mod commands;
 pub mod meeting;
 pub mod problems;
+pub mod snippets;
 pub mod stage;
 pub mod stats;
 pub mod store;

@@ -79,6 +79,24 @@ pub struct WordRecord {
     pub deleted: bool,
 }
 
+/// One snippet: a spoken cue and the text it types. Shared by every device
+/// like rules: the newest change wins, and a deleted one stays as a
+/// tombstone so the deletion reaches every device.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnippetRecord {
+    /// Chosen by the device that created the snippet.
+    pub id: String,
+    /// What the user says.
+    pub cue: String,
+    /// What gets typed, line breaks included.
+    pub text: String,
+    /// When it last changed. The newest change wins.
+    pub updated_at: i64,
+    /// True for a deleted snippet (a tombstone).
+    #[serde(default)]
+    pub deleted: bool,
+}
+
 /// Longest custom word accepted, in bytes.
 pub const MAX_WORD_BYTES: usize = 100;
 
@@ -166,6 +184,9 @@ pub struct PushRequest {
     /// Custom words added or removed.
     #[serde(default)]
     pub words: Vec<WordRecord>,
+    /// Snippets created, changed or deleted.
+    #[serde(default)]
+    pub snippets: Vec<SnippetRecord>,
 }
 
 impl PushRequest {
@@ -176,6 +197,7 @@ impl PushRequest {
             + self.substitutions.len()
             + self.meetings.len()
             + self.words.len()
+            + self.snippets.len()
     }
 
     /// True when there is nothing to send.
@@ -201,6 +223,9 @@ pub struct PushResponse {
     /// ignored them, so the device must keep them queued.
     #[serde(default)]
     pub words: Option<usize>,
+    /// Snippet changes accepted; `None` from a hub that predates snippets.
+    #[serde(default)]
+    pub snippets: Option<usize>,
 }
 
 /// Answer to `GET /api/sync/pull?since=<cursor>`.
@@ -211,6 +236,9 @@ pub struct PullResponse {
     /// Custom words that changed after the cursor, tombstones included.
     #[serde(default)]
     pub words: Vec<WordRecord>,
+    /// Snippets that changed after the cursor, tombstones included.
+    #[serde(default)]
+    pub snippets: Vec<SnippetRecord>,
     /// Send this as `since` next time.
     pub cursor: i64,
 }

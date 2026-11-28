@@ -13,5 +13,6 @@ pub mod fillers;
 pub mod language;
 pub mod meeting;
 pub mod rules;
+pub mod snippets;
 pub mod sync;
 pub mod token;
