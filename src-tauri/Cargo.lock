@@ -2478,6 +2478,7 @@ dependencies = [
  "hf-hub",
  "hikaya-capture",
  "hikaya-core",
+ "hikaya-foreground",
  "hound",
  "isolang",
  "libc",
@@ -2725,6 +2726,14 @@ dependencies = [
  "serde",
  "similar",
  "strsim",
+]
+
+[[package]]
+name = "hikaya-foreground"
+version = "0.1.0"
+dependencies = [
+ "hikaya-core",
+ "windows 0.61.3",
 ]
 
 [[package]]

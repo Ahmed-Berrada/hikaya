@@ -525,6 +525,11 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+        // Hikaya: note where the text will go, before the overlay shows.
+        crate::hikaya::target::remember(
+            app.try_state::<Arc<crate::hikaya::store::LearningStore>>()
+                .is_none_or(|store| store.prefs().adapt_to_app),
+        );
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();

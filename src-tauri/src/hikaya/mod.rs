@@ -14,6 +14,7 @@ pub mod stats;
 pub mod store;
 pub mod sync;
 pub mod sync_worker;
+pub mod target;
 
 use std::sync::{Arc, OnceLock};
 use store::LearningStore;

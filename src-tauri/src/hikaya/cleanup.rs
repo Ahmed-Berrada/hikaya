@@ -17,6 +17,7 @@ const PROMPT: &str = include_str!("cleanup_prompt.txt");
 const EARLIER: &[&str] = &[
     include_str!("cleanup_prompt.v1.txt"),
     include_str!("cleanup_prompt.v2.txt"),
+    include_str!("cleanup_prompt.v3.txt"),
 ];
 
 /// The current built-in prompt when `prompt` is an unedited earlier one.
@@ -42,11 +43,12 @@ pub fn default_prompt() -> LLMPrompt {
 
 /// Fills Hikaya's placeholders in a cleanup prompt. `${vocabulary}` becomes
 /// the speaker's custom words and rule replacements, so the model spells
-/// names and terms the way the user does. Prompts without it are unchanged.
+/// names and terms the way the user does; `${context}` says where the text
+/// goes (see `with_context`). Prompts without them are unchanged.
 pub fn expand(prompt: &str, settings: &AppSettings) -> String {
-    let prompt = upgraded(prompt);
+    let prompt = with_context(upgraded(prompt), super::target::current().as_ref());
     if !prompt.contains("${vocabulary}") {
-        return prompt.to_string();
+        return prompt;
     }
     let rules = super::learning_store()
         .map(|store| store.active_rules())
@@ -58,6 +60,22 @@ pub fn expand(prompt: &str, settings: &AppSettings) -> String {
         words.join(", ")
     };
     prompt.replace("${vocabulary}", &list)
+}
+
+/// Replaces `${context}` with a line about the app the text goes into, or
+/// removes it (and the blank line after it) when the app is unknown or
+/// ordinary, so the prompt then reads exactly as before.
+fn with_context(prompt: &str, target: Option<&hikaya_core::context::Target>) -> String {
+    let line = target
+        .map(hikaya_core::context::prompt_line)
+        .unwrap_or_default();
+    if line.is_empty() {
+        prompt
+            .replace("${context}\n\n", "")
+            .replace("${context}", "")
+    } else {
+        prompt.replace("${context}", &line)
+    }
 }
 
 /// Whether a post-processed text may replace the transcription.
@@ -104,6 +122,21 @@ mod tests {
         assert!(
             prompt.prompt.contains("Never translate") || prompt.prompt.contains("NEVER translate")
         );
+    }
+
+    #[test]
+    fn the_context_line_is_filled_or_removed_cleanly() {
+        let slack = hikaya_core::context::understand(&hikaya_core::context::Foreground {
+            process: "slack".into(),
+            title: String::new(),
+        });
+        let filled = with_context(PROMPT, Some(&slack));
+        assert!(filled.contains("chat message in Slack"));
+        assert!(!filled.contains("${context}"));
+        let empty = with_context(PROMPT, None);
+        assert!(!empty.contains("${context}"));
+        assert!(!empty.contains("\n\n\n"));
+        assert!(empty.trim_end().ends_with("Return only the cleaned text."));
     }
 
     #[test]
