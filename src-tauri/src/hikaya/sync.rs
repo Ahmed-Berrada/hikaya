@@ -14,7 +14,7 @@ use super::store::{now_ms, LearningStore};
 use anyhow::{Context, Result};
 use hikaya_core::sync::{
     clean_word, DictationRecord, MeetingLineRecord, MeetingRecord, PullResponse, PushRequest,
-    PushResponse, RuleRecord, SubstitutionRecord, WordRecord,
+    PushResponse, RuleRecord, SnippetRecord, SubstitutionRecord, WordRecord,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -22,13 +22,17 @@ use specta::Type;
 use std::future::Future;
 use std::time::Duration;
 
-/// Dictations sent per push. Rules, corrections and words ride along.
-const DICTATIONS_PER_PUSH: usize = 200;
+/// Dictations sent per push. Rules, corrections, words and snippets ride along.
+const DICTATIONS_PER_PUSH: usize = 150;
 /// Rules, corrections and custom words each sent per push, at most.
 const OTHERS_PER_PUSH: usize = 100;
+/// Snippets sent per push, at most: each can hold a few kilobytes of text.
+const SNIPPETS_PER_PUSH: usize = 50;
 // A full batch must fit in one push, or the hub refuses it as too large.
-const _: () =
-    assert!(DICTATIONS_PER_PUSH + 3 * OTHERS_PER_PUSH <= hikaya_core::sync::MAX_RECORDS_PER_PUSH);
+const _: () = assert!(
+    DICTATIONS_PER_PUSH + 3 * OTHERS_PER_PUSH + SNIPPETS_PER_PUSH
+        <= hikaya_core::sync::MAX_RECORDS_PER_PUSH
+);
 /// Meetings sent per push: each carries its whole transcript.
 const MEETINGS_PER_PUSH: usize = 1;
 /// Meetings in these states are finished and can be sent.
@@ -97,6 +101,10 @@ pub struct SyncReport {
     pub received_words: usize,
     /// The hub ignored custom words (it predates them); they stay queued.
     pub words_unsupported: bool,
+    /// Snippet changes from other devices applied here.
+    pub received_snippets: usize,
+    /// The hub ignored snippets (it predates them); they stay queued.
+    pub snippets_unsupported: bool,
     /// Records the hub refused for good in this run; they are set aside.
     pub refused: usize,
     /// The run stopped at its push limit with records still queued.
@@ -161,6 +169,7 @@ impl LearningStore {
                 "UPDATE rules SET synced = 0;
                  UPDATE substitutions SET synced = 0;
                  UPDATE custom_words SET synced = 0;
+                 UPDATE snippets SET synced = 0;
                  UPDATE meetings SET synced = 0, phone_completed = 1
                    WHERE status IN ('done', 'interrupted');
                  DELETE FROM sync_refused;",
@@ -324,6 +333,9 @@ impl LearningStore {
         for w in &batch.words {
             note("word", &w.word)?;
         }
+        for s in &batch.snippets {
+            note("snippet", &s.id)?;
+        }
         for d in &batch.dictations {
             tx.execute("DELETE FROM sync_outbox WHERE uid = ?1", params![d.id])?;
         }
@@ -351,6 +363,12 @@ impl LearningStore {
                 params![w.word, w.updated_at],
             )?;
         }
+        for s in &batch.snippets {
+            tx.execute(
+                "UPDATE snippets SET synced = 2 WHERE uid = ?1 AND updated_at = ?2",
+                params![s.id, s.updated_at],
+            )?;
+        }
         tx.commit()?;
         Ok(())
     }
@@ -360,7 +378,7 @@ impl LearningStore {
         Ok(setting(&self.conn()?, "last_sync_at")?.and_then(|v| v.parse().ok()))
     }
 
-    fn next_batch(&self, with_words: bool) -> Result<PushRequest> {
+    fn next_batch(&self, with_words: bool, with_snippets: bool) -> Result<PushRequest> {
         let conn = self.conn()?;
         let dictations = conn
             .prepare(
@@ -423,12 +441,28 @@ impl LearningStore {
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        let snippets = conn
+            .prepare(
+                "SELECT uid, cue, text, updated_at, deleted FROM snippets
+                 WHERE synced = 0 AND ?1 LIMIT ?2",
+            )?
+            .query_map(params![with_snippets, SNIPPETS_PER_PUSH as i64], |row| {
+                Ok(SnippetRecord {
+                    id: row.get(0)?,
+                    cue: row.get(1)?,
+                    text: row.get(2)?,
+                    updated_at: row.get(3)?,
+                    deleted: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(PushRequest {
             dictations,
             rules,
             substitutions,
             meetings: Vec::new(),
             words,
+            snippets,
         })
     }
 
@@ -496,6 +530,18 @@ impl LearningStore {
                 params![m.id, m.updated_at],
             )?;
         }
+        for x in &batch.snippets {
+            tx.execute(
+                "UPDATE snippets SET synced = 1 WHERE uid = ?1 AND updated_at = ?2",
+                params![x.id, x.updated_at],
+            )?;
+            tx.execute(
+                "DELETE FROM sync_refused WHERE kind = 'snippet' AND uid = ?1",
+                params![x.id],
+            )?;
+        }
+        // Tombstones the hub has seen are no longer needed here.
+        tx.execute("DELETE FROM snippets WHERE deleted = 1 AND synced = 1", [])?;
         for w in &batch.words {
             tx.execute(
                 "UPDATE custom_words SET synced = 1 WHERE word = ?1 AND updated_at = ?2",
@@ -656,6 +702,39 @@ impl LearningStore {
         Ok(())
     }
 
+    /// Applies snippet changes from the hub. The newest change wins; a
+    /// local change that has not been sent yet and is newer is kept.
+    fn merge_snippets(&self, snippets: &[SnippetRecord]) -> Result<usize> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let mut applied = 0;
+        for x in snippets {
+            let local: Option<i64> = tx
+                .query_row(
+                    "SELECT updated_at FROM snippets WHERE uid = ?1",
+                    params![x.id],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match local {
+                Some(updated_at) if updated_at >= x.updated_at => continue,
+                None if x.deleted => continue,
+                _ => {}
+            }
+            tx.execute(
+                "INSERT INTO snippets (uid, cue, text, updated_at, deleted, synced)
+                 VALUES (?1, ?2, ?3, ?4, ?5, 1)
+                 ON CONFLICT (uid) DO UPDATE SET cue = ?2, text = ?3, updated_at = ?4,
+                   deleted = ?5, synced = 1",
+                params![x.id, x.cue, x.text, x.updated_at, x.deleted],
+            )?;
+            applied += 1;
+        }
+        tx.execute("DELETE FROM snippets WHERE deleted = 1 AND synced = 1", [])?;
+        tx.commit()?;
+        Ok(applied)
+    }
+
     fn pull_cursor(&self) -> Result<i64> {
         let stored = setting(&self.conn()?, "pull_cursor")?;
         Ok(match stored.as_deref().map(str::parse::<i64>) {
@@ -681,14 +760,17 @@ pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncR
             report.more = true;
             break;
         }
-        let batch = store.next_batch(!report.words_unsupported).map_err(other)?;
+        let batch = store
+            .next_batch(!report.words_unsupported, !report.snippets_unsupported)
+            .map_err(other)?;
         if batch.is_empty() {
             break;
         }
         let full = batch.dictations.len() >= DICTATIONS_PER_PUSH
             || batch.rules.len() >= OTHERS_PER_PUSH
             || batch.substitutions.len() >= OTHERS_PER_PUSH
-            || batch.words.len() >= OTHERS_PER_PUSH;
+            || batch.words.len() >= OTHERS_PER_PUSH
+            || batch.snippets.len() >= SNIPPETS_PER_PUSH;
         pushes += push_or_set_aside(store, hub, batch, &mut report).await?;
         if !full {
             break;
@@ -713,6 +795,7 @@ pub async fn sync_once(store: &LearningStore, hub: &impl HubApi) -> Result<SyncR
     let pulled = hub.pull(store.pull_cursor().map_err(other)?).await?;
     report.received_rules = store.merge_rules(&pulled.rules).map_err(other)?;
     report.received_words = store.merge_words(&pulled.words).map_err(other)?;
+    report.received_snippets = store.merge_snippets(&pulled.snippets).map_err(other)?;
     let conn = store.conn().map_err(other)?;
     set_setting(&conn, "pull_cursor", &pulled.cursor.to_string()).map_err(other)?;
     set_setting(&conn, "last_sync_at", &now_ms().to_string()).map_err(other)?;
@@ -781,6 +864,13 @@ fn accepted(
         report.words_unsupported = true;
         batch.words.clear();
     }
+    if response.snippets.is_none() && !batch.snippets.is_empty() {
+        if !report.snippets_unsupported {
+            log::warn!("The hub does not store snippets yet; update it to sync them");
+        }
+        report.snippets_unsupported = true;
+        batch.snippets.clear();
+    }
     batch
 }
 
@@ -819,6 +909,10 @@ impl Split for PushRequest {
             }))
             .chain(self.words.iter().map(|w| PushRequest {
                 words: vec![w.clone()],
+                ..one()
+            }))
+            .chain(self.snippets.iter().map(|x| PushRequest {
+                snippets: vec![x.clone()],
                 ..one()
             }))
             .collect()
@@ -1100,6 +1194,8 @@ mod tests {
         words: Mutex<Vec<WordRecord>>,
         /// Answers like a hub that predates custom words, and keeps none.
         old: Mutex<bool>,
+        /// Every snippet the hub holds; a pull returns all of them.
+        snippets: Mutex<Vec<SnippetRecord>>,
         error: Mutex<Option<HubError>>,
         pushes: Mutex<usize>,
         /// Ids the hub refuses, as the real one refuses an invalid record:
@@ -1140,7 +1236,8 @@ mod tests {
                 .map(|d| &d.id)
                 .chain(request.meetings.iter().map(|m| &m.id))
                 .chain(request.rules.iter().map(|r| &r.id))
-                .chain(request.words.iter().map(|w| &w.word));
+                .chain(request.words.iter().map(|w| &w.word))
+                .chain(request.snippets.iter().map(|x| &x.id));
             if let Some(id) = ids.into_iter().find(|id| refused.contains(id)) {
                 return Err(HubError::Rejected(format!("record {id} is invalid")));
             }
@@ -1186,8 +1283,17 @@ mod tests {
             if old {
                 return Ok(PushResponse::default());
             }
+            let mut snippets = self.snippets.lock().expect("lock");
+            for x in &request.snippets {
+                match snippets.iter_mut().find(|y| y.id == x.id) {
+                    Some(y) if y.updated_at < x.updated_at => *y = x.clone(),
+                    Some(_) => {}
+                    None => snippets.push(x.clone()),
+                }
+            }
             Ok(PushResponse {
                 words: Some(request.words.len()),
+                snippets: Some(request.snippets.len()),
                 ..Default::default()
             })
         }
@@ -1203,6 +1309,7 @@ mod tests {
                 cursor: changed.iter().map(|(s, _)| *s).max().unwrap_or(since),
                 rules: changed.into_iter().map(|(_, r)| r.clone()).collect(),
                 words: self.words.lock().expect("lock").clone(),
+                snippets: self.snippets.lock().expect("lock").clone(),
             })
         }
     }
@@ -1653,7 +1760,11 @@ mod tests {
         assert_eq!(left, 1);
         // Nothing changed: nothing is queued again.
         store.note_custom_words(&["Hikaya".into()]).expect("note");
-        assert!(store.next_batch(true).expect("batch").words.is_empty());
+        assert!(store
+            .next_batch(true, true)
+            .expect("batch")
+            .words
+            .is_empty());
     }
 
     #[tokio::test]
@@ -1673,7 +1784,11 @@ mod tests {
         store.note_custom_words(&settings).expect("note");
         let again = sync_once(&store, &hub).await.expect("sync");
         assert_eq!(again.received_words, 0);
-        assert!(store.next_batch(true).expect("batch").words.is_empty());
+        assert!(store
+            .next_batch(true, true)
+            .expect("batch")
+            .words
+            .is_empty());
 
         // Removed here: the removal is sent.
         settings.retain(|w| w != "Kubernetes");
@@ -1701,7 +1816,11 @@ mod tests {
         // The run stops here (a crash, a failed write): the settings never
         // got the word. The next run must not send a removal for it.
         store.note_custom_words(&[]).expect("note");
-        assert!(store.next_batch(true).expect("batch").words.is_empty());
+        assert!(store
+            .next_batch(true, true)
+            .expect("batch")
+            .words
+            .is_empty());
         let mut settings = Vec::new();
         assert_eq!(apply_pending(&store, &mut settings), 1);
         assert_eq!(settings, ["Kubernetes"]);
@@ -1723,7 +1842,7 @@ mod tests {
         apply_pending(&store, &mut settings);
         settings.clear();
         store.note_custom_words(&settings).expect("note");
-        let batch = store.next_batch(true).expect("batch");
+        let batch = store.next_batch(true, true).expect("batch");
         assert!(batch.words[0].deleted);
         assert!(batch.words[0].updated_at > ahead);
         sync_once(&store, &hub).await.expect("sync");
@@ -1741,7 +1860,10 @@ mod tests {
         assert!(report.words_unsupported);
         // One push, not one per batch of 100 until the run's limit.
         assert_eq!(*hub.pushes.lock().expect("lock"), 1);
-        assert_eq!(store.next_batch(true).expect("batch").words.len(), 100);
+        assert_eq!(
+            store.next_batch(true, true).expect("batch").words.len(),
+            100
+        );
 
         // Once the hub is updated, they all go.
         *hub.old.lock().expect("lock") = false;
@@ -1760,7 +1882,62 @@ mod tests {
         let report = sync_once(&store, &hub).await.expect("sync");
         assert_eq!(report.refused, 1);
         assert_eq!(live_hub_words(&hub), ["good"]);
-        assert!(store.next_batch(true).expect("batch").words.is_empty());
+        assert!(store
+            .next_batch(true, true)
+            .expect("batch")
+            .words
+            .is_empty());
         assert_eq!(store.refused_count().expect("count"), 1);
+    }
+
+    #[tokio::test]
+    async fn snippets_reach_the_hub_and_come_back_from_other_devices() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        let saved = store
+            .save_snippet("my address", "12 rue de la Paix\n75002 Paris")
+            .expect("save");
+        sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(
+            hub.snippets.lock().expect("lock")[0].text,
+            "12 rue de la Paix\n75002 Paris"
+        );
+        assert!(store
+            .next_batch(true, true)
+            .expect("batch")
+            .snippets
+            .is_empty());
+
+        // Changed on another device later: the change arrives here.
+        hub.snippets.lock().expect("lock")[0] = SnippetRecord {
+            id: saved.id.clone(),
+            cue: "my address".into(),
+            text: "Elsewhere".into(),
+            updated_at: now_ms() + 10_000,
+            deleted: false,
+        };
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert_eq!(report.received_snippets, 1);
+        assert_eq!(store.list_snippets().expect("list")[0].text, "Elsewhere");
+
+        // Deleted here: the tombstone is sent, then forgotten.
+        store.delete_snippet(&saved.id).expect("delete");
+        sync_once(&store, &hub).await.expect("sync");
+        assert!(hub.snippets.lock().expect("lock")[0].deleted);
+        assert!(store.list_snippets().expect("list").is_empty());
+    }
+
+    #[tokio::test]
+    async fn snippets_stay_queued_for_a_hub_that_predates_them() {
+        let (_dir, store) = connected();
+        let hub = FakeHub::default();
+        *hub.old.lock().expect("lock") = true;
+        store.save_snippet("sig", "— Ahmed").expect("save");
+        let report = sync_once(&store, &hub).await.expect("sync");
+        assert!(report.snippets_unsupported);
+        assert_eq!(
+            store.next_batch(true, true).expect("batch").snippets.len(),
+            1
+        );
     }
 }

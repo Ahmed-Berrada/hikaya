@@ -1116,6 +1116,39 @@ async hikayaGetPrefs() : Promise<Prefs> {
     return await TAURI_INVOKE("hikaya_get_prefs");
 },
 /**
+ * The user's snippets, by cue.
+ */
+async hikayaListSnippets() : Promise<Result<StoredSnippet[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_list_snippets") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Saves a snippet; a cue already in use gets the new text.
+ */
+async hikayaSaveSnippet(cue: string, text: string) : Promise<Result<StoredSnippet, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_save_snippet", { cue, text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Deletes a snippet, here and on the user's other devices.
+ */
+async hikayaDeleteSnippet(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_delete_snippet", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Saves Hikaya's own preferences.
  */
 async hikayaSetPrefs(prefs: Prefs) : Promise<Result<null, string>> {
@@ -1828,6 +1861,22 @@ created_at: number;
  * Unix time in milliseconds of the last change.
  */
 updated_at: number }
+/**
+ * A snippet as stored and as shown in the UI.
+ */
+export type StoredSnippet = { 
+/**
+ * Chosen when it was created, the same on every device.
+ */
+id: string; 
+/**
+ * What the user says.
+ */
+cue: string; 
+/**
+ * What gets typed.
+ */
+text: string }
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
  */

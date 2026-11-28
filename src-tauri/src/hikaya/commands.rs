@@ -146,6 +146,33 @@ pub fn hikaya_hub_disconnect(
     Ok(worker.status())
 }
 
+/// The user's snippets, by cue.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_list_snippets(
+    store: Store<'_>,
+) -> Result<Vec<super::snippets::StoredSnippet>, String> {
+    store.list_snippets().map_err(text_error)
+}
+
+/// Saves a snippet; a cue already in use gets the new text.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_save_snippet(
+    store: Store<'_>,
+    cue: String,
+    text: String,
+) -> Result<super::snippets::StoredSnippet, String> {
+    store.save_snippet(&cue, &text).map_err(text_error)
+}
+
+/// Deletes a snippet, here and on the user's other devices.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_delete_snippet(store: Store<'_>, id: String) -> Result<(), String> {
+    store.delete_snippet(&id).map_err(text_error)
+}
+
 /// Hikaya's own preferences.
 #[tauri::command]
 #[specta::specta]

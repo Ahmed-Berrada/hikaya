@@ -134,6 +134,18 @@ const MIGRATIONS: &[M] = &[
     // Hikaya's own preferences, kept out of Handy's settings so upstream
     // merges never touch them. A missing key means the default.
     M::up("CREATE TABLE prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL);"),
+    // Snippets: a spoken cue that types a saved text. `synced`: 0 to send,
+    // 1 sent, 2 refused by the hub. A deleted one stays until sent.
+    M::up(
+        "CREATE TABLE snippets (
+        uid TEXT PRIMARY KEY,
+        cue TEXT NOT NULL,
+        text TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        synced INTEGER NOT NULL DEFAULT 0
+    );",
+    ),
 ];
 
 /// Hikaya's own preferences, as the UI reads and writes them.
@@ -591,6 +603,7 @@ mod tests {
                     voice_commands: true,
                     app: None,
                     command: false,
+                    snippets: &[],
                 }
             ),
             "Demande à Ahmed."

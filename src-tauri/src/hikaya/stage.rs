@@ -6,6 +6,7 @@ use hikaya_core::{
     commands::apply_commands,
     fillers::strip_fillers,
     rules::{apply_rules, Rule},
+    snippets::{expand, Snippet},
     token::{join, tokenize},
 };
 use std::sync::Arc;
@@ -28,6 +29,8 @@ pub struct StageInput<'a> {
     /// Command mode: the words are an instruction, so "delete that" must
     /// not delete them.
     pub command: bool,
+    /// The user's snippets.
+    pub snippets: &'a [Snippet],
 }
 
 /// Removes fillers for all of the user's languages, applies their rules,
@@ -58,6 +61,11 @@ pub fn apply_stage(text: &str, input: &StageInput) -> String {
         let bases: Vec<&str> = bases.iter().map(String::as_str).collect();
         text = apply_commands(&text, &bases);
     }
+    // Last: a snippet's text is typed exactly as saved, line breaks included,
+    // and no later step may rebuild its spacing.
+    if !input.command && !input.snippets.is_empty() {
+        text = expand(&text, input.snippets);
+    }
     text
 }
 
@@ -84,6 +92,10 @@ pub fn apply(app: &AppHandle, text: String) -> String {
         .try_state::<Arc<LearningStore>>()
         .is_none_or(|store| store.prefs().voice_commands);
     let target = super::target::current();
+    let snippets = app
+        .try_state::<Arc<LearningStore>>()
+        .map(|store| store.active_snippets())
+        .unwrap_or_default();
     apply_stage(
         &text,
         &StageInput {
@@ -94,6 +106,7 @@ pub fn apply(app: &AppHandle, text: String) -> String {
             voice_commands,
             app: target.as_ref().map(|t| t.app.as_str()),
             command: super::target::is_command(),
+            snippets: &snippets,
         },
     )
 }
@@ -115,7 +128,25 @@ mod tests {
             voice_commands: true,
             app: None,
             command: false,
+            snippets: &[],
         }
+    }
+
+    #[test]
+    fn a_snippet_is_typed_last_with_its_line_breaks() {
+        let languages = vec!["en".to_string()];
+        let snippets = vec![Snippet {
+            cue: "my address".into(),
+            text: "12 rue de la Paix\n75002 Paris".into(),
+        }];
+        let mut with = input(&languages, true, &[]);
+        with.snippets = &snippets;
+        assert_eq!(
+            apply_stage("Um send it to my address.", &with),
+            "Send it to 12 rue de la Paix\n75002 Paris"
+        );
+        with.command = true;
+        assert_eq!(apply_stage("my address", &with), "my address");
     }
 
     #[test]
