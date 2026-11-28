@@ -7,12 +7,14 @@ import {
   type RuleProposal,
   type Stats,
   type StoredRule,
+  type StoredSnippet,
 } from "@/bindings";
 import { notify } from "@/stores/noticeStore";
 import { isComposingKeyEvent } from "@/lib/utils/keyboard";
 import Badge from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { Textarea } from "../ui/Textarea";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { Switch } from "../ui/Switch";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
@@ -198,6 +200,122 @@ const PrefsPanels: React.FC = () => {
   );
 };
 
+/** Saved texts typed by a spoken cue ("my address" → the address). */
+const SnippetsPanel: React.FC = () => {
+  const { t } = useTranslation();
+  const [snippets, setSnippets] = useState<StoredSnippet[]>([]);
+  const [cue, setCue] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const reload = useCallback(async () => {
+    const loaded = await commands.hikayaListSnippets();
+    if (loaded.status === "ok") setSnippets(loaded.data);
+    else
+      notify({ title: t("hikaya.snippets.loadError"), detail: loaded.error });
+  }, [t]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const canSave = cue.trim().length > 0 && text.trim().length > 0 && !busy;
+
+  const save = async () => {
+    if (!canSave) return;
+    setBusy(true);
+    const result = await commands.hikayaSaveSnippet(cue, text);
+    if (result.status === "error") {
+      notify({ title: t("hikaya.snippets.saveError"), detail: result.error });
+    } else {
+      setCue("");
+      setText("");
+    }
+    await reload();
+    setBusy(false);
+  };
+
+  const remove = async (id: string) => {
+    setBusy(true);
+    const result = await commands.hikayaDeleteSnippet(id);
+    if (result.status === "error") {
+      notify({ title: t("hikaya.snippets.saveError"), detail: result.error });
+    }
+    await reload();
+    setBusy(false);
+  };
+
+  return (
+    <SettingsGroup
+      title={t("hikaya.snippets.title")}
+      description={t("hikaya.snippets.description")}
+    >
+      <div className="flex flex-col gap-2 px-4 py-3">
+        <label className="flex flex-col gap-1 text-xs text-ink-3">
+          {t("hikaya.snippets.cueLabel")}
+          <Input
+            type="text"
+            className="w-64"
+            variant="compact"
+            value={cue}
+            maxLength={100}
+            onChange={(e) => setCue(e.target.value)}
+            placeholder={t("hikaya.snippets.cuePlaceholder")}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-ink-3">
+          {t("hikaya.snippets.textLabel")}
+          <Textarea
+            variant="compact"
+            value={text}
+            maxLength={4000}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={t("hikaya.snippets.textPlaceholder")}
+          />
+        </label>
+        <div>
+          <Button
+            variant="primary"
+            size="md"
+            disabled={!canSave}
+            onClick={() => void save()}
+          >
+            {t("hikaya.snippets.save")}
+          </Button>
+        </div>
+      </div>
+      {snippets.length === 0 ? (
+        <p className="px-4 py-3 text-sm text-ink-3">
+          {t("hikaya.snippets.empty")}
+        </p>
+      ) : (
+        snippets.map((snippet) => (
+          <div
+            key={snippet.id}
+            className="flex items-start justify-between gap-3 px-4 py-2"
+          >
+            <div className="min-w-0 text-sm">
+              <div className="font-semibold">“{snippet.cue}”</div>
+              <div className="whitespace-pre-line text-ink-3 line-clamp-3">
+                {snippet.text}
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => void remove(snippet.id)}
+              aria-label={t("hikaya.snippets.delete", { cue: snippet.cue })}
+            >
+              <Trash2 width={16} height={16} />
+            </Button>
+          </div>
+        ))
+      )}
+    </SettingsGroup>
+  );
+};
+
 export const LearningSettings: React.FC = () => {
   const { t } = useTranslation();
   const [rules, setRules] = useState<StoredRule[]>([]);
@@ -278,6 +396,7 @@ export const LearningSettings: React.FC = () => {
     <div className="max-w-3xl w-full mx-auto space-y-6">
       {stats && <StatsPanel stats={stats} />}
       <PrefsPanels />
+      <SnippetsPanel />
       <SettingsGroup
         title={t("hikaya.learning.proposals.title")}
         description={t("hikaya.learning.proposals.description")}

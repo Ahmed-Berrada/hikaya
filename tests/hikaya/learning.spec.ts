@@ -234,6 +234,39 @@ test.describe("Voice commands", () => {
   });
 });
 
+test.describe("Snippets", () => {
+  test("saves a multi-line snippet, lists it and deletes it", async ({
+    page,
+  }) => {
+    await mockTauri(page);
+    await openLearning(page);
+    await expect(page.getByText("No snippets yet.")).toBeVisible();
+    await page.getByLabel("When I say").fill("my address");
+    await page
+      .getByLabel("Hikaya types")
+      .fill("12 rue de la Paix\n75002 Paris");
+    await page.getByRole("button", { name: "Save snippet" }).click();
+    await expect(page.getByText("“my address”")).toBeVisible();
+    await expect(page.getByText("No snippets yet.")).toBeHidden();
+    await expect(page.getByLabel("When I say")).toHaveValue("");
+    await page
+      .getByRole("button", { name: "Delete the snippet “my address”" })
+      .click();
+    await expect(page.getByText("No snippets yet.")).toBeVisible();
+  });
+
+  test("is in French for a French system", async ({ page }) => {
+    await mockTauri(page, {
+      settings: { app_language: "fr" },
+      locale: "fr-FR",
+    });
+    await page.goto("/");
+    await page.getByText("Apprentissage", { exact: true }).click();
+    await expect(page.getByText("Extraits", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Quand je dis")).toBeVisible();
+  });
+});
+
 test.describe("Correcting a dictation in History", () => {
   test("saves the corrected text and says what was learned", async ({
     page,

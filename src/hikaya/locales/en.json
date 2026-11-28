@@ -235,5 +235,18 @@
   "commandBinding": {
     "name": "Command Mode",
     "description": "Select text, hold this and say what to do with it."
+  },
+  "snippets": {
+    "title": "Snippets",
+    "description": "Say a short cue and Hikaya types the saved text: your address, a signature, a meeting link. They sync to your other computers through the hub.",
+    "cueLabel": "When I say",
+    "cuePlaceholder": "my address",
+    "textLabel": "Hikaya types",
+    "textPlaceholder": "12 rue de la Paix\n75002 Paris",
+    "save": "Save snippet",
+    "empty": "No snippets yet.",
+    "delete": "Delete the snippet “{{cue}}”",
+    "loadError": "Could not load the snippets",
+    "saveError": "Could not save the snippet"
   }
 }

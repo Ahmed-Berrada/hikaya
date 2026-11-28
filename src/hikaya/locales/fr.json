@@ -235,5 +235,18 @@
   "commandBinding": {
     "name": "Mode commande",
     "description": "Sélectionnez un texte, maintenez ce raccourci et dites quoi en faire."
+  },
+  "snippets": {
+    "title": "Extraits",
+    "description": "Dites un court signal et Hikaya tape le texte enregistré : votre adresse, une signature, un lien de réunion. Ils se synchronisent avec vos autres ordinateurs via le hub.",
+    "cueLabel": "Quand je dis",
+    "cuePlaceholder": "mon adresse",
+    "textLabel": "Hikaya tape",
+    "textPlaceholder": "12 rue de la Paix\n75002 Paris",
+    "save": "Enregistrer l’extrait",
+    "empty": "Aucun extrait pour l’instant.",
+    "delete": "Supprimer l’extrait « {{cue}} »",
+    "loadError": "Impossible de charger les extraits",
+    "saveError": "Impossible d’enregistrer l’extrait"
   }
 }
