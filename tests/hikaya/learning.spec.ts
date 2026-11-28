@@ -138,6 +138,44 @@ test.describe("Learning screen", () => {
   });
 });
 
+test.describe("Voice commands", () => {
+  test("lists the commands and saves the switch", async ({ page }) => {
+    await mockTauri(page);
+    await openLearning(page);
+    await expect(
+      page.getByText("Voice commands", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("“delete that”, “supprime ça”")).toBeVisible();
+    const toggle = page.getByRole("checkbox", {
+      name: /Act on voice commands/,
+    });
+    await expect(toggle).toBeChecked();
+    await toggle.uncheck({ force: true });
+    await expect(toggle).not.toBeChecked();
+    const saved = await page.evaluate(() =>
+      (window as any).__HIKAYA_MOCK__.state.calls.filter(
+        (c: { cmd: string }) => c.cmd === "hikaya_set_prefs",
+      ),
+    );
+    expect(saved).toEqual([
+      { cmd: "hikaya_set_prefs", args: { prefs: { voice_commands: false } } },
+    ]);
+  });
+
+  test("is in French for a French system", async ({ page }) => {
+    await mockTauri(page, {
+      settings: { app_language: "fr" },
+      locale: "fr-FR",
+    });
+    await page.goto("/");
+    await page.getByText("Apprentissage", { exact: true }).click();
+    await expect(
+      page.getByText("Commandes vocales", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("« à la ligne », « new line »")).toBeVisible();
+  });
+});
+
 test.describe("Correcting a dictation in History", () => {
   test("saves the corrected text and says what was learned", async ({
     page,

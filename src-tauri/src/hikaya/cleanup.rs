@@ -11,6 +11,26 @@ pub const PROMPT_ID: &str = "hikaya_cleanup";
 /// local model.
 const PROMPT: &str = include_str!("cleanup_prompt.txt");
 
+/// Earlier versions of the built-in prompt. Settings keep a copy of the
+/// prompt from the day the app was installed; a copy that is exactly one of
+/// these was never edited, so it is replaced by the current text.
+const EARLIER: &[&str] = &[
+    include_str!("cleanup_prompt.v1.txt"),
+    include_str!("cleanup_prompt.v2.txt"),
+];
+
+/// The current built-in prompt when `prompt` is an unedited earlier one.
+fn upgraded(prompt: &str) -> &str {
+    if EARLIER
+        .iter()
+        .any(|old| old.trim_end() == prompt.trim_end())
+    {
+        PROMPT.trim_end()
+    } else {
+        prompt
+    }
+}
+
 /// Hikaya's built-in cleanup prompt, selected by default on a new install.
 pub fn default_prompt() -> LLMPrompt {
     LLMPrompt {
@@ -24,6 +44,7 @@ pub fn default_prompt() -> LLMPrompt {
 /// the speaker's custom words and rule replacements, so the model spells
 /// names and terms the way the user does. Prompts without it are unchanged.
 pub fn expand(prompt: &str, settings: &AppSettings) -> String {
+    let prompt = upgraded(prompt);
     if !prompt.contains("${vocabulary}") {
         return prompt.to_string();
     }
@@ -83,6 +104,16 @@ mod tests {
         assert!(
             prompt.prompt.contains("Never translate") || prompt.prompt.contains("NEVER translate")
         );
+    }
+
+    #[test]
+    fn an_unedited_earlier_prompt_is_upgraded_and_an_edited_one_is_kept() {
+        for old in EARLIER {
+            assert_eq!(upgraded(old), PROMPT.trim_end());
+        }
+        let edited = format!("{} Always use British spelling.", EARLIER[1]);
+        assert_eq!(upgraded(&edited), edited);
+        assert!(PROMPT.contains("line break"));
     }
 
     #[test]

@@ -103,5 +103,11 @@
     "vocabulary": ["GitHub", "Ahmed"],
     "keep": ["weather is nice today"],
     "drop": ["GitHub", "Ahmed"]
+  },
+  {
+    "id": "line-breaks-kept",
+    "input": "bonjour Paul,\nvoici euh le compte rendu, and the slides are attached",
+    "keep": ["Bonjour Paul,", "\n", "compte rendu", "the slides are attached"],
+    "drop": ["euh", "les diapositives"]
   }
 ]

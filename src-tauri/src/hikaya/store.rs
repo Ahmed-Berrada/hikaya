@@ -131,7 +131,25 @@ const MIGRATIONS: &[M] = &[
         applied INTEGER NOT NULL DEFAULT 1
     );",
     ),
+    // Hikaya's own preferences, kept out of Handy's settings so upstream
+    // merges never touch them. A missing key means the default.
+    M::up("CREATE TABLE prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL);"),
 ];
+
+/// Hikaya's own preferences, as the UI reads and writes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct Prefs {
+    /// "New line", "scratch that" and their French forms act as commands.
+    pub voice_commands: bool,
+}
+
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            voice_commands: true,
+        }
+    }
+}
 
 /// A replacement rule as stored and as shown in the UI.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -225,6 +243,37 @@ impl LearningStore {
             Ok(mut active) => *active = rules,
             Err(poisoned) => *poisoned.into_inner() = rules,
         }
+        Ok(())
+    }
+
+    /// Hikaya's preferences; defaults for anything not set or unreadable.
+    pub fn prefs(&self) -> Prefs {
+        let read = || -> Result<Prefs> {
+            let conn = self.conn()?;
+            let value: Option<String> = conn
+                .query_row(
+                    "SELECT value FROM prefs WHERE key = 'voice_commands'",
+                    [],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            Ok(Prefs {
+                voice_commands: value.as_deref() != Some("false"),
+            })
+        };
+        read().unwrap_or_else(|e| {
+            log::warn!("Could not read Hikaya's preferences, using the defaults: {e:#}");
+            Prefs::default()
+        })
+    }
+
+    /// Saves Hikaya's preferences.
+    pub fn set_prefs(&self, prefs: Prefs) -> Result<()> {
+        self.conn()?.execute(
+            "INSERT INTO prefs (key, value) VALUES ('voice_commands', ?1)
+             ON CONFLICT (key) DO UPDATE SET value = ?1",
+            params![prefs.voice_commands.to_string()],
+        )?;
         Ok(())
     }
 
@@ -525,6 +574,7 @@ mod tests {
                     remove_fillers: true,
                     extra_fillers: &[],
                     rules: &rules,
+                    voice_commands: true,
                 }
             ),
             "Demande à Ahmed."
@@ -567,5 +617,19 @@ mod tests {
             .record_correction(None, "same text", "same text")
             .expect("record");
         assert!(found.is_empty());
+    }
+
+    #[test]
+    fn prefs_default_to_voice_commands_on_and_persist() {
+        let (_dir, store) = store();
+        assert!(store.prefs().voice_commands);
+        store
+            .set_prefs(Prefs {
+                voice_commands: false,
+            })
+            .expect("save");
+        assert!(!store.prefs().voice_commands);
+        store.set_prefs(Prefs::default()).expect("save");
+        assert!(store.prefs().voice_commands);
     }
 }

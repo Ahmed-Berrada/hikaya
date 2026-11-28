@@ -45,6 +45,19 @@
       "rules_other": "{{count}} rules, {{learned}} learned from your corrections",
       "topCorrections": "What you correct most",
       "times": "×{{count}}"
+    },
+    "voiceCommands": {
+      "title": "Voice commands",
+      "description": "Say these on their own, with a short pause before and after.",
+      "toggle": "Act on voice commands",
+      "toggleHint": "Off, the phrases are typed as words.",
+      "newLine": "New line",
+      "newLineSays": "“new line”, “à la ligne”",
+      "newParagraph": "New paragraph",
+      "newParagraphSays": "“new paragraph”, “nouveau paragraphe”",
+      "scratch": "Delete the sentence before",
+      "scratchSays": "“delete that”, “supprime ça”",
+      "saveError": "Could not save the voice commands setting"
     }
   },
   "correction": {

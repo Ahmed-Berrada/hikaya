@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ArrowRight, Trash2 } from "lucide-react";
 import {
   commands,
+  type Prefs,
   type RuleProposal,
   type Stats,
   type StoredRule,
@@ -14,6 +15,7 @@ import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { Switch } from "../ui/Switch";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 const Replacement: React.FC<{ from: string; to: string }> = ({ from, to }) => (
   <span className="flex items-center gap-2 min-w-0 text-sm">
@@ -97,6 +99,64 @@ const StatsPanel: React.FC<{ stats: Stats }> = ({ stats }) => {
   );
 };
 
+/** What each spoken command does, and the phrases that say it. */
+const VOICE_COMMANDS = ["newLine", "newParagraph", "scratch"] as const;
+
+const VoiceCommandsPanel: React.FC = () => {
+  const { t } = useTranslation();
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    void commands.hikayaGetPrefs().then(setPrefs);
+  }, []);
+
+  const toggle = async (voiceCommands: boolean) => {
+    if (!prefs) return;
+    const next = { ...prefs, voice_commands: voiceCommands };
+    setSaving(true);
+    setPrefs(next);
+    const result = await commands.hikayaSetPrefs(next);
+    if (result.status === "error") {
+      setPrefs(prefs);
+      notify({
+        title: t("hikaya.learning.voiceCommands.saveError"),
+        detail: result.error,
+      });
+    }
+    setSaving(false);
+  };
+
+  if (!prefs) return null;
+  return (
+    <SettingsGroup
+      title={t("hikaya.learning.voiceCommands.title")}
+      description={t("hikaya.learning.voiceCommands.description")}
+    >
+      <ToggleSwitch
+        checked={prefs.voice_commands}
+        onChange={(on) => void toggle(on)}
+        isUpdating={saving}
+        label={t("hikaya.learning.voiceCommands.toggle")}
+        description={t("hikaya.learning.voiceCommands.toggleHint")}
+        grouped
+      />
+      <ul className="px-4 py-3 space-y-1.5 text-sm">
+        {VOICE_COMMANDS.map((key) => (
+          <li key={key} className="flex flex-wrap justify-between gap-x-4">
+            <span className="font-semibold">
+              {t(`hikaya.learning.voiceCommands.${key}`)}
+            </span>
+            <span className="text-ink-3">
+              {t(`hikaya.learning.voiceCommands.${key}Says`)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </SettingsGroup>
+  );
+};
+
 export const LearningSettings: React.FC = () => {
   const { t } = useTranslation();
   const [rules, setRules] = useState<StoredRule[]>([]);
@@ -176,6 +236,7 @@ export const LearningSettings: React.FC = () => {
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       {stats && <StatsPanel stats={stats} />}
+      <VoiceCommandsPanel />
       <SettingsGroup
         title={t("hikaya.learning.proposals.title")}
         description={t("hikaya.learning.proposals.description")}

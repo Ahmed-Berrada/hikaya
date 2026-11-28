@@ -32,6 +32,13 @@ Open Notepad and use the transcribe shortcut.
 - [ ] "Euh" and "um" said on purpose do not appear.
 - [ ] The text also lands in Slack or a browser field, not only Notepad.
 - [ ] Time from releasing the key to seeing text, for about ten seconds of speech: \_\_\_ s.
+- [ ] With **Whisper Large v3 Turbo** on the GPU: a sentence comes out as words, not a run of
+      random tokens in several alphabets. On an Intel iGPU with the Mesa Vulkan driver it does
+      (2026-11-28, with transcribe-cpp 0.4.2 and 0.5.0; the CPU is fine). If the NVIDIA GPU does it
+      too, switch acceleration to CPU and open an issue.
+- [ ] Voice commands: "Hi Sarah, new line, thanks" types two lines; "I'll call you Monday. Delete
+      that. I'll call you Tuesday." types only the last sentence; "À la ligne" and "supprime ça" do
+      the same in French. "I added a new line of code" stays as words.
 
 ## Learning
 

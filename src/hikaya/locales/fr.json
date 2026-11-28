@@ -45,6 +45,19 @@
       "rules_other": "{{count}} règles, dont {{learned}} apprises de vos corrections",
       "topCorrections": "Ce que vous corrigez le plus",
       "times": "×{{count}}"
+    },
+    "voiceCommands": {
+      "title": "Commandes vocales",
+      "description": "Dites-les seules, avec une courte pause avant et après.",
+      "toggle": "Appliquer les commandes vocales",
+      "toggleHint": "Désactivées, les phrases sont écrites telles quelles.",
+      "newLine": "Nouvelle ligne",
+      "newLineSays": "« à la ligne », « new line »",
+      "newParagraph": "Nouveau paragraphe",
+      "newParagraphSays": "« nouveau paragraphe », « new paragraph »",
+      "scratch": "Effacer la phrase précédente",
+      "scratchSays": "« supprime ça », « delete that »",
+      "saveError": "Impossible d’enregistrer le réglage des commandes vocales"
     }
   },
   "correction": {

@@ -4,6 +4,7 @@
 //! tested on any machine. The desktop app and the hub both depend on it.
 
 pub mod audio;
+pub mod commands;
 pub mod corrections;
 pub mod faithful;
 pub mod fillers;
