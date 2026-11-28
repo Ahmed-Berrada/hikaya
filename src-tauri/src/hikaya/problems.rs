@@ -21,6 +21,18 @@ pub enum Problem {
     MeetingIncomplete,
     /// A recording from the phone could not be transcribed here.
     PhoneRecording,
+    /// Command mode found no selected text to work on.
+    CommandNoSelection,
+    /// Command mode needs an AI provider and model, and none is set.
+    CommandNoModel,
+    /// The model failed or sent back nothing.
+    CommandFailed,
+    /// The model changed the text's language unasked; the text was kept.
+    CommandTranslated,
+    /// Command mode cannot read the selection on this system (Wayland).
+    CommandUnsupported,
+    /// The user switched apps before the result was ready.
+    CommandFocusMoved,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -70,5 +82,18 @@ mod tests {
             serde_json::to_string(&Problem::PhoneRecording).expect("json"),
             r#""phone_recording""#
         );
+        for (kind, name) in [
+            (Problem::CommandNoSelection, "command_no_selection"),
+            (Problem::CommandNoModel, "command_no_model"),
+            (Problem::CommandFailed, "command_failed"),
+            (Problem::CommandTranslated, "command_translated"),
+            (Problem::CommandUnsupported, "command_unsupported"),
+            (Problem::CommandFocusMoved, "command_focus_moved"),
+        ] {
+            assert_eq!(
+                serde_json::to_string(&kind).expect("json"),
+                format!("\"{name}\"")
+            );
+        }
     }
 }

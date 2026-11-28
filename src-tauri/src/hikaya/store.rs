@@ -590,6 +590,7 @@ mod tests {
                     rules: &rules,
                     voice_commands: true,
                     app: None,
+                    command: false,
                 }
             ),
             "Demande à Ahmed."

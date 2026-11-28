@@ -25,6 +25,9 @@ pub struct StageInput<'a> {
     pub voice_commands: bool,
     /// The app being dictated into, for rules scoped to one app.
     pub app: Option<&'a str>,
+    /// Command mode: the words are an instruction, so "delete that" must
+    /// not delete them.
+    pub command: bool,
 }
 
 /// Removes fillers for all of the user's languages, applies their rules,
@@ -46,7 +49,7 @@ pub fn apply_stage(text: &str, input: &StageInput) -> String {
     if !input.rules.is_empty() {
         text = keep_original_unless_changed(&text, apply_rules(&text, input.rules, input.app));
     }
-    if input.voice_commands {
+    if input.voice_commands && !input.command {
         // "fr-CA" speaks French commands too.
         let bases: Vec<String> = languages
             .iter()
@@ -90,6 +93,7 @@ pub fn apply(app: &AppHandle, text: String) -> String {
             rules: &rules,
             voice_commands,
             app: target.as_ref().map(|t| t.app.as_str()),
+            command: super::target::is_command(),
         },
     )
 }
@@ -110,6 +114,7 @@ mod tests {
             rules,
             voice_commands: true,
             app: None,
+            command: false,
         }
     }
 

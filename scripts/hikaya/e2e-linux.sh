@@ -33,7 +33,15 @@ export WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-wayland-0}"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
 
 say() { printf '== %s\n' "$*"; }
-die() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+die() {
+  printf 'FAIL: %s\n' "$*" >&2
+  # The hub's side of a sync failure, before cleanup deletes it.
+  if [[ -s "${WORK:-}/hub.log" ]]; then
+    echo "--- last lines of the hub's log" >&2
+    tail -20 "$WORK/hub.log" >&2
+  fi
+  exit 1
+}
 for tool in pw-cli pw-loopback pw-play wpctl curl python3 sha256sum; do
   command -v "$tool" >/dev/null || die "missing tool: $tool"
 done

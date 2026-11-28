@@ -16,6 +16,7 @@ import { Input } from "../ui/Input";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { Switch } from "../ui/Switch";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
+import { ShortcutInput } from "../settings/ShortcutInput";
 
 const Replacement: React.FC<{ from: string; to: string }> = ({ from, to }) => (
   <span className="flex items-center gap-2 min-w-0 text-sm">
@@ -158,6 +159,15 @@ const PrefsPanels: React.FC = () => {
             </li>
           ))}
         </ul>
+      </SettingsGroup>
+      <SettingsGroup
+        title={t("hikaya.command.title")}
+        description={t("hikaya.command.description")}
+      >
+        <ShortcutInput shortcutId="hikaya_command" grouped />
+        <p className="px-4 py-3 text-sm text-ink-3">
+          {t("hikaya.command.examples")}
+        </p>
       </SettingsGroup>
       <SettingsGroup
         title={t("hikaya.learning.adapt.title")}

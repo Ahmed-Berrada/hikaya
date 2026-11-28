@@ -170,6 +170,29 @@ test.describe("Voice commands", () => {
     ]);
   });
 
+  test("command mode shows its shortcut, named in Hikaya's words", async ({
+    page,
+  }) => {
+    await mockTauri(page);
+    await openLearning(page);
+    await expect(page.getByText("Command mode", { exact: true })).toBeVisible();
+    await expect(page.getByText("Command Mode", { exact: true })).toBeVisible();
+    await expect(page.getByText(/make it more formal/)).toBeVisible();
+  });
+
+  test("command mode is in French for a French system", async ({ page }) => {
+    await mockTauri(page, {
+      settings: { app_language: "fr" },
+      locale: "fr-FR",
+    });
+    await page.goto("/");
+    await page.getByText("Apprentissage", { exact: true }).click();
+    await expect(
+      page.getByText("Mode commande", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByText(/rends-le plus formel/)).toBeVisible();
+  });
+
   test("adapting to the app has its own switch", async ({ page }) => {
     await mockTauri(page);
     await openLearning(page);

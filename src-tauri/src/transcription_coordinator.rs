@@ -577,7 +577,11 @@ pub struct TranscriptionCoordinator {
 }
 
 pub fn is_transcribe_binding(id: &str) -> bool {
-    id == "transcribe" || id == "transcribe_with_post_process"
+    id == "transcribe"
+        || id == "transcribe_with_post_process"
+        // Hikaya: command mode is a dictation too, with the same push-to-talk,
+        // toggle and one-at-a-time handling.
+        || id == crate::hikaya::command_mode::BINDING
 }
 
 impl TranscriptionCoordinator {

@@ -201,6 +201,39 @@
     "phone_recording": {
       "title": "Enregistrement du téléphone non transcrit",
       "detail": "Le hub garde l'audio et le proposera de nouveau."
+    },
+    "command_no_selection": {
+      "title": "Aucun texte sélectionné",
+      "detail": "Le mode commande agit sur un texte sélectionné : sélectionnez-en, puis maintenez le raccourci de commande et dites quoi faire."
+    },
+    "command_no_model": {
+      "title": "Le mode commande requiert un modèle d’IA",
+      "detail": "Choisissez un fournisseur et un modèle dans Post-traitement (Ollama fonctionne hors ligne)."
+    },
+    "command_failed": {
+      "title": "Commande non appliquée",
+      "detail": "Votre texte est resté tel quel."
+    },
+    "command_translated": {
+      "title": "Commande non appliquée",
+      "detail": "Le modèle a changé la langue de votre texte, qui est donc resté tel quel. Dites « traduis en… » pour traduire."
+    },
+    "command_unsupported": {
+      "title": "Mode commande indisponible",
+      "detail": "Sous Wayland, Hikaya ne peut pas lire le texte sélectionné. Il fonctionne sous Windows, macOS et X11."
+    },
+    "command_focus_moved": {
+      "title": "Commande non appliquée",
+      "detail": "Vous avez changé d’app avant que le résultat soit prêt : il n’a pas été collé. Votre texte est resté tel quel."
     }
+  },
+  "command": {
+    "title": "Mode commande",
+    "description": "Sélectionnez un texte n’importe où, maintenez ce raccourci et dites quoi faire : « raccourcis-le », « fais-en une liste », « translate to English ». La sélection est remplacée par le résultat. Utilise le modèle d’IA choisi dans Post-traitement.",
+    "examples": "Essayez : « rends-le plus formel », « corrige la grammaire », « traduis en anglais »."
+  },
+  "commandBinding": {
+    "name": "Mode commande",
+    "description": "Sélectionnez un texte, maintenez ce raccourci et dites quoi en faire."
   }
 }

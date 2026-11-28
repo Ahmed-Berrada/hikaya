@@ -6,6 +6,7 @@
 //! and the Tauri commands the UI calls.
 
 pub mod cleanup;
+pub mod command_mode;
 pub mod commands;
 pub mod meeting;
 pub mod problems;

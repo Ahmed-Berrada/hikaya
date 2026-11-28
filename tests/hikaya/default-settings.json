@@ -29,6 +29,13 @@
       "description": "Converts your speech into text and applies AI post-processing.",
       "id": "transcribe_with_post_process",
       "name": "Transcribe with Post-Processing"
+    },
+    "hikaya_command": {
+      "id": "hikaya_command",
+      "name": "Command Mode",
+      "description": "Select text, hold this and say what to do with it.",
+      "default_binding": "super+alt+space",
+      "current_binding": "super+alt+space"
     }
   },
   "chinese_script": "as_transcribed",

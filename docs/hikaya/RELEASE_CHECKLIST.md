@@ -42,6 +42,10 @@ Open Notepad and use the transcribe shortcut.
 - [ ] With the AI cleanup on, dictate "ok sounds good see you tomorrow" into Slack (or Teams): no
       final period. Dictate "git status" into Windows Terminal: it stays lowercase. Learning →
       "Adapt to the app" off: both come out as in Notepad.
+- [ ] Command mode: in Notepad, select a long sentence, hold Win+Alt+Space, say "make it shorter":
+      the selection is replaced by a shorter one. Select a French sentence and say "translate to
+      English": it is replaced in English. With nothing selected, the footer says "No Text
+      Selected" and nothing is typed. The clipboard holds what it held before.
 
 ## Learning
 

@@ -900,8 +900,32 @@ fn sends_keys(paste_method: PasteMethod) -> bool {
 /// Pastes `text` into the focused app. Call from a worker thread, never the main
 /// thread: it sleeps between steps (input injection hops via `with_enigo`).
 pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {
+    paste_with(text, app_handle, |_| {})
+}
+
+/// Hikaya: pastes command mode's result over the selection. A trailing
+/// space or an Enter (auto-submit) belong to dictation, not to an edit.
+pub fn paste_replacement(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {
+    paste_with(text, app_handle, |settings| {
+        settings.append_trailing_space = false;
+        settings.auto_submit = false;
+    })
+}
+
+/// Hikaya: held while command mode reads the selection through the
+/// clipboard, so a paste never lands in the middle of it.
+pub fn lock_clipboard() -> std::sync::MutexGuard<'static, ()> {
+    PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn paste_with(
+    text: String,
+    app_handle: AppHandle,
+    adjust: impl FnOnce(&mut AppSettings),
+) -> Result<PasteOutcome, String> {
     let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let settings = get_settings(&app_handle);
+    let mut settings = get_settings(&app_handle);
+    adjust(&mut settings);
 
     // Windows drops the keystrokes Handy sends to an elevated window and may
     // not say so, so ask before pasting instead of trusting the result. The

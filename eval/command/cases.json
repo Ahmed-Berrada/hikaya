@@ -1,0 +1,52 @@
+[
+  {
+    "id": "shorter-en",
+    "selection": "Hi team, I just wanted to let you all know that, after a lot of discussion, we have decided to move the release from Friday to the following Monday so that we have more time to test.",
+    "instruction": "make it shorter",
+    "keep": ["monday"],
+    "drop": ["lundi", "after a lot of discussion"],
+    "max_ratio": 0.75
+  },
+  {
+    "id": "translate-to-en",
+    "selection": "On se voit demain à dix heures pour la démo.",
+    "instruction": "traduis en anglais",
+    "keep": ["tomorrow", "demo"],
+    "drop": ["demain", "here is", "voici"]
+  },
+  {
+    "id": "translate-to-fr",
+    "selection": "Thanks for the update, I'll review it tonight.",
+    "instruction": "translate to French",
+    "keep": ["merci"],
+    "drop": ["thanks", "tonight"]
+  },
+  {
+    "id": "formal-fr",
+    "selection": "salut, t'as vu le devis ? dis-moi vite stp",
+    "instruction": "rends-le plus formel",
+    "keep": ["devis"],
+    "drop": ["salut", "stp", "t'as"]
+  },
+  {
+    "id": "bullets",
+    "selection": "We need to update the docs, fix the login bug and send the invoice to Marc.",
+    "instruction": "turn this into a bullet list",
+    "keep": ["docs", "login", "invoice", "\n"],
+    "drop": ["here is", "sure"]
+  },
+  {
+    "id": "mixed-kept",
+    "selection": "euh on pousse le fix sur main, and then we ship friday",
+    "instruction": "fix the grammar",
+    "keep": ["on pousse le fix", "we ship"],
+    "drop": ["euh", "nous livrons", "we push the fix"]
+  },
+  {
+    "id": "no-answer",
+    "selection": "What time is the meeting tomorrow?",
+    "instruction": "fix the punctuation",
+    "keep": ["what time is the meeting tomorrow?"],
+    "drop": ["the meeting is at", "o'clock"]
+  }
+]
