@@ -100,6 +100,38 @@ jobs:
       - name: Clippy (Windows)
         run: cargo clippy --locked --target x86_64-pc-windows-msvc -- -D warnings
 
+  foreground:
+    name: hikaya-foreground (Linux and Windows)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crates/hikaya-foreground
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: x86_64-pc-windows-msvc
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "crates/hikaya-foreground -> target"
+
+      - name: Format
+        run: cargo fmt -- --check
+
+      - name: Clippy (Linux)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # The foreground-window code only compiles for Windows; checking it
+      # here catches type errors without a Windows machine.
+      - name: Clippy (Windows)
+        run: cargo clippy --locked --target x86_64-pc-windows-msvc -- -D warnings
+
+      - name: Tests
+        run: cargo test --locked
+
   hub:
     name: hikaya-hub
     runs-on: ubuntu-24.04
@@ -202,7 +234,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crate: [crates/hikaya-core, crates/hikaya-capture, hub]
+        crate: [crates/hikaya-core, crates/hikaya-capture, crates/hikaya-foreground, hub]
     steps:
       - uses: actions/checkout@v5
 
