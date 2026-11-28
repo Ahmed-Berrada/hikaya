@@ -176,7 +176,9 @@
     "speakers": {
       "you": "You",
       "others": "Others",
-      "room": "Room"
+      "room": "Room",
+      "voice": "Speaker {{n}}",
+      "voicePattern": "Speaker {n}"
     },
     "errors": {
       "start": "Couldn't start the meeting",
@@ -184,7 +186,19 @@
       "summary": "Couldn't summarize the meeting",
       "export": "Couldn't export the meeting",
       "delete": "Couldn't delete the meeting",
-      "rename": "Couldn't rename the meeting"
+      "rename": "Couldn't rename the meeting",
+      "speakers": "Could not tell the speakers apart"
+    },
+    "voices": {
+      "title": "Voices",
+      "description": "Name the voices Hikaya told apart. The names go into the summary and the exports.",
+      "nameLabel": "Name of speaker {{n}}",
+      "namePlaceholder": "Name",
+      "split": "Tell speakers apart",
+      "splitting": "Telling speakers apart…",
+      "oneVoice": "Only one voice was found, so the transcript is unchanged.",
+      "toggle": "Tell speakers apart (beta)",
+      "toggleHint": "After a meeting, Hikaya splits what the other people said by voice (Speaker 1, Speaker 2…) and transcribes it again. It downloads about 32 MB of models the first time and can take a few minutes after a long meeting."
     }
   },
   "problems": {
@@ -225,6 +239,10 @@
     "command_focus_moved": {
       "title": "Command Not Applied",
       "detail": "You switched apps before the result was ready, so it was not pasted. Your text was left as it was."
+    },
+    "speakers_failed": {
+      "title": "Speakers Not Told Apart",
+      "detail": "The transcript was kept as it was."
     }
   },
   "command": {

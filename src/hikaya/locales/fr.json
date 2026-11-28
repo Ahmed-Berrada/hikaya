@@ -176,7 +176,9 @@
     "speakers": {
       "you": "Vous",
       "others": "Autres",
-      "room": "Salle"
+      "room": "Salle",
+      "voice": "Intervenant {{n}}",
+      "voicePattern": "Intervenant {n}"
     },
     "errors": {
       "start": "Impossible de démarrer la réunion",
@@ -184,7 +186,19 @@
       "summary": "Impossible de résumer la réunion",
       "export": "Impossible d'exporter la réunion",
       "delete": "Impossible de supprimer la réunion",
-      "rename": "Impossible de renommer la réunion"
+      "rename": "Impossible de renommer la réunion",
+      "speakers": "Impossible de distinguer les intervenants"
+    },
+    "voices": {
+      "title": "Voix",
+      "description": "Nommez les voix que Hikaya a distinguées. Les noms apparaissent dans le résumé et les exports.",
+      "nameLabel": "Nom de l’intervenant {{n}}",
+      "namePlaceholder": "Nom",
+      "split": "Distinguer les intervenants",
+      "splitting": "Distinction des intervenants…",
+      "oneVoice": "Une seule voix a été trouvée : la transcription n’a pas changé.",
+      "toggle": "Distinguer les intervenants (bêta)",
+      "toggleHint": "Après une réunion, Hikaya sépare par voix ce qu’ont dit les autres participants (Intervenant 1, Intervenant 2…) et le transcrit à nouveau. Il télécharge environ 32 Mo de modèles la première fois, et cela peut prendre quelques minutes après une longue réunion."
     }
   },
   "problems": {
@@ -225,6 +239,10 @@
     "command_focus_moved": {
       "title": "Commande non appliquée",
       "detail": "Vous avez changé d’app avant que le résultat soit prêt : il n’a pas été collé. Votre texte est resté tel quel."
+    },
+    "speakers_failed": {
+      "title": "Intervenants non distingués",
+      "detail": "La transcription est restée telle quelle."
     }
   },
   "command": {

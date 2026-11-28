@@ -165,7 +165,13 @@ test.describe("Voice commands", () => {
     expect(saved).toEqual([
       {
         cmd: "hikaya_set_prefs",
-        args: { prefs: { voice_commands: false, adapt_to_app: true } },
+        args: {
+          prefs: {
+            voice_commands: false,
+            adapt_to_app: true,
+            tell_speakers_apart: false,
+          },
+        },
       },
     ]);
   });
@@ -215,7 +221,13 @@ test.describe("Voice commands", () => {
     expect(saved).toEqual([
       {
         cmd: "hikaya_set_prefs",
-        args: { prefs: { voice_commands: true, adapt_to_app: false } },
+        args: {
+          prefs: {
+            voice_commands: true,
+            adapt_to_app: false,
+            tell_speakers_apart: false,
+          },
+        },
       },
     ]);
   });

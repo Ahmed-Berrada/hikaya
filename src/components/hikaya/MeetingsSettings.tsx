@@ -10,12 +10,15 @@ import {
   type MeetingDetail,
   type MeetingLine,
   type MeetingSummary,
+  type Prefs,
+  type VoiceName,
 } from "@/bindings";
 import { notify } from "@/stores/noticeStore";
 import { MarkdownContent } from "../whats-new/MarkdownContent";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { SettingsGroup } from "../ui/SettingsGroup";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 /** Event the backend sends when a meeting changes. */
 const UPDATED_EVENT = "hikaya-meeting-updated";
@@ -34,8 +37,24 @@ const clock = (ms: number) => {
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: string };
 
-const Transcript: React.FC<{ lines: MeetingLine[] }> = ({ lines }) => {
+/** What a line is called: the voice's name, "Speaker 2", or the track. */
+const useSpeakerLabel = (voices: VoiceName[] = []) => {
   const { t } = useTranslation();
+  return (line: MeetingLine) => {
+    if (line.voice === null)
+      return t(`hikaya.meetings.speakers.${line.speaker}`);
+    return (
+      voices.find((v) => v.voice === line.voice)?.name ||
+      t("hikaya.meetings.speakers.voice", { n: line.voice })
+    );
+  };
+};
+
+const Transcript: React.FC<{ lines: MeetingLine[]; voices?: VoiceName[] }> = ({
+  lines,
+  voices,
+}) => {
+  const label = useSpeakerLabel(voices);
   return (
     <ol className="flex flex-col gap-2 px-4 py-3">
       {lines.map((line, i) => (
@@ -46,7 +65,7 @@ const Transcript: React.FC<{ lines: MeetingLine[] }> = ({ lines }) => {
           <span
             className={`font-semibold me-1 ${line.speaker === "you" ? "text-logo-primary" : ""}`}
           >
-            {t(`hikaya.meetings.speakers.${line.speaker}`)}:
+            {label(line)}:
           </span>
           <span className="whitespace-pre-wrap">{line.text}</span>
         </li>
@@ -95,6 +114,30 @@ const Detail: React.FC<{ id: number; onBack: () => void }> = ({
     you: t("hikaya.meetings.speakers.you"),
     others: t("hikaya.meetings.speakers.others"),
     room: t("hikaya.meetings.speakers.room"),
+    // Rust fills {n}; i18next would read {{n}} itself.
+    voice: t("hikaya.meetings.speakers.voicePattern"),
+  };
+  const [splitting, setSplitting] = useState(false);
+
+  const split = async () => {
+    setSplitting(true);
+    const result = await commands.hikayaMeetingSplitSpeakers(id);
+    setSplitting(false);
+    if (failed("hikaya.meetings.errors.speakers", result)) return;
+    if (result.status === "ok" && result.data < 2) {
+      notify({ title: t("hikaya.meetings.voices.oneVoice") });
+    }
+    await load();
+  };
+
+  const renameVoice = async (voice: number, name: string) => {
+    if (
+      !failed(
+        "hikaya.meetings.errors.rename",
+        await commands.hikayaMeetingRenameVoice(id, voice, name),
+      )
+    )
+      await load();
   };
 
   const exportText = async (format: ExportFormat) => {
@@ -143,6 +186,7 @@ const Detail: React.FC<{ id: number; onBack: () => void }> = ({
       speakers.you,
       speakers.others,
       speakers.room,
+      speakers.voice,
     );
     setSummarizing(false);
     if (!failed("hikaya.meetings.errors.summary", result)) await load();
@@ -170,7 +214,10 @@ const Detail: React.FC<{ id: number; onBack: () => void }> = ({
   };
 
   if (!detail) return null;
-  const { meeting, lines, summary } = detail;
+  const { meeting, lines, summary, voices } = detail;
+  const voiceNumbers = [
+    ...new Set(lines.flatMap((l) => (l.voice === null ? [] : [l.voice]))),
+  ].sort((a, b) => a - b);
   const busy =
     meeting.status === "recording" || meeting.status === "transcribing";
 
@@ -242,9 +289,63 @@ const Detail: React.FC<{ id: number; onBack: () => void }> = ({
         </div>
       </SettingsGroup>
 
+      {voiceNumbers.length > 0 && (
+        <SettingsGroup
+          title={t("hikaya.meetings.voices.title")}
+          description={t("hikaya.meetings.voices.description")}
+        >
+          <div className="flex flex-col gap-2 px-4 py-3">
+            {voiceNumbers.map((n) => (
+              <label
+                key={n}
+                className="flex items-center gap-3 text-sm text-ink-3"
+              >
+                <span className="w-28 shrink-0">
+                  {t("hikaya.meetings.speakers.voice", { n })}
+                </span>
+                <Input
+                  type="text"
+                  variant="compact"
+                  className="w-48"
+                  maxLength={60}
+                  defaultValue={voices.find((v) => v.voice === n)?.name ?? ""}
+                  placeholder={t("hikaya.meetings.voices.namePlaceholder")}
+                  aria-label={t("hikaya.meetings.voices.nameLabel", { n })}
+                  onBlur={(e) => {
+                    const name = e.target.value.trim();
+                    const before =
+                      voices.find((v) => v.voice === n)?.name ?? "";
+                    if (name !== before) void renameVoice(n, name);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                  }}
+                />
+              </label>
+            ))}
+          </div>
+        </SettingsGroup>
+      )}
+
       <SettingsGroup title={t("hikaya.meetings.detail.transcript")}>
+        {meeting.system_audio &&
+          meeting.status === "done" &&
+          voiceNumbers.length === 0 && (
+            <div className="px-4 pt-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={splitting}
+                onClick={() => void split()}
+              >
+                {splitting
+                  ? t("hikaya.meetings.voices.splitting")
+                  : t("hikaya.meetings.voices.split")}
+              </Button>
+            </div>
+          )}
         {lines.length ? (
-          <Transcript lines={lines} />
+          <Transcript lines={lines} voices={voices} />
         ) : (
           <p className="px-4 py-3 text-sm text-ink-3">
             {t("hikaya.meetings.detail.noLines")}
@@ -292,6 +393,24 @@ export const MeetingsSettings: React.FC = () => {
   const [open, setOpen] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [now, setNow] = useState(Date.now());
+
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
+  useEffect(() => {
+    void commands.hikayaGetPrefs().then(setPrefs);
+  }, []);
+  const setSpeakers = async (on: boolean) => {
+    if (!prefs) return;
+    const next = { ...prefs, tell_speakers_apart: on };
+    setPrefs(next);
+    const result = await commands.hikayaSetPrefs(next);
+    if (result.status === "error") {
+      setPrefs(prefs);
+      notify({
+        title: t("hikaya.meetings.errors.speakers"),
+        detail: result.error,
+      });
+    }
+  };
 
   const refresh = useCallback(async () => {
     const current = await commands.hikayaMeetingActive();
@@ -352,6 +471,18 @@ export const MeetingsSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
+      {prefs && (
+        <SettingsGroup>
+          <ToggleSwitch
+            checked={prefs.tell_speakers_apart}
+            onChange={(on) => void setSpeakers(on)}
+            label={t("hikaya.meetings.voices.toggle")}
+            description={t("hikaya.meetings.voices.toggleHint")}
+            descriptionMode="inline"
+            grouped
+          />
+        </SettingsGroup>
+      )}
       {active ? (
         <SettingsGroup>
           <div className="flex flex-col gap-2 px-4 py-3">
