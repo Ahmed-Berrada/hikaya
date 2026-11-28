@@ -101,6 +101,19 @@ check.
   (`scripts/hikaya/e2e-phone.sh`); still to check on a real iPhone.
 - iOS Shortcut: record, send to the hub, copy the result to the clipboard.
 
+### v0.6: Dictation that keeps up with Wispr Flow
+
+What still separates Hikaya's dictation from the best cloud tools, all done locally:
+
+- **Voice commands** in English and French: "new line" / "à la ligne", "new paragraph" /
+  "nouveau paragraphe", "delete that" / "supprime ça". Done; checked against real speech-to-text
+  with `eval/commands/`.
+- **The app you dictate into**: detect it (Windows first), so per-app rules apply and the cleanup
+  can match the place (casual in a chat, formal in an email, code-friendly in an editor).
+- **Command mode**: select text, hold a shortcut and say what to do ("make it shorter", "traduis
+  en anglais"); the selection is replaced by the result, with the local model.
+- **Snippets**: a short spoken cue ("my address") types a saved text.
+
 ## Evaluation data
 
 Accuracy is measured with word error rate (WER) on openly licensed corpora (Mozilla Common Voice,

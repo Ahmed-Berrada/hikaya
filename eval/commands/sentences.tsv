@@ -1,0 +1,9 @@
+# language	expected text after commands (\n = line break)	text to synthesize
+en	Hi Sarah,\nThanks for the deck.	Hi Sarah, new line. Thanks for the deck.
+en	First point.\n\nSecond point.	First point. New paragraph. Second point.
+en	I'll call you Tuesday.	I'll call you Monday. Delete that. I'll call you Tuesday.
+en	I added a new line of code to the parser.	I added a new line of code to the parser.
+fr	Bonjour Paul.\n\nVoici le compte rendu.	Bonjour Paul. Nouveau paragraphe. Voici le compte rendu.
+fr	Bonjour Marie.\nMerci pour tout.	Bonjour Marie. À la ligne. Merci pour tout.
+fr	Je t'appelle mardi.	Je t'appelle lundi. Supprime ça. Je t'appelle mardi.
+fr	On passe à la ligne suivante du tableau.	On passe à la ligne suivante du tableau.
