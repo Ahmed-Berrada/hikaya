@@ -102,7 +102,11 @@ const StatsPanel: React.FC<{ stats: Stats }> = ({ stats }) => {
 /** What each spoken command does, and the phrases that say it. */
 const VOICE_COMMANDS = ["newLine", "newParagraph", "scratch"] as const;
 
-const VoiceCommandsPanel: React.FC = () => {
+/** What changes in each kind of app when dictation adapts to it. */
+const APP_KINDS = ["chat", "terminal", "code"] as const;
+
+/** Hikaya's own switches: voice commands, and adapting to the app. */
+const PrefsPanels: React.FC = () => {
   const { t } = useTranslation();
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [saving, setSaving] = useState(false);
@@ -111,9 +115,9 @@ const VoiceCommandsPanel: React.FC = () => {
     void commands.hikayaGetPrefs().then(setPrefs);
   }, []);
 
-  const toggle = async (voiceCommands: boolean) => {
+  const save = async (change: Partial<Prefs>) => {
     if (!prefs) return;
-    const next = { ...prefs, voice_commands: voiceCommands };
+    const next = { ...prefs, ...change };
     setSaving(true);
     setPrefs(next);
     const result = await commands.hikayaSetPrefs(next);
@@ -129,31 +133,58 @@ const VoiceCommandsPanel: React.FC = () => {
 
   if (!prefs) return null;
   return (
-    <SettingsGroup
-      title={t("hikaya.learning.voiceCommands.title")}
-      description={t("hikaya.learning.voiceCommands.description")}
-    >
-      <ToggleSwitch
-        checked={prefs.voice_commands}
-        onChange={(on) => void toggle(on)}
-        isUpdating={saving}
-        label={t("hikaya.learning.voiceCommands.toggle")}
-        description={t("hikaya.learning.voiceCommands.toggleHint")}
-        grouped
-      />
-      <ul className="px-4 py-3 space-y-1.5 text-sm">
-        {VOICE_COMMANDS.map((key) => (
-          <li key={key} className="flex flex-wrap justify-between gap-x-4">
-            <span className="font-semibold">
-              {t(`hikaya.learning.voiceCommands.${key}`)}
-            </span>
-            <span className="text-ink-3">
-              {t(`hikaya.learning.voiceCommands.${key}Says`)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </SettingsGroup>
+    <>
+      <SettingsGroup
+        title={t("hikaya.learning.voiceCommands.title")}
+        description={t("hikaya.learning.voiceCommands.description")}
+      >
+        <ToggleSwitch
+          checked={prefs.voice_commands}
+          onChange={(on) => void save({ voice_commands: on })}
+          isUpdating={saving}
+          label={t("hikaya.learning.voiceCommands.toggle")}
+          description={t("hikaya.learning.voiceCommands.toggleHint")}
+          grouped
+        />
+        <ul className="px-4 py-3 space-y-1.5 text-sm">
+          {VOICE_COMMANDS.map((key) => (
+            <li key={key} className="flex flex-wrap justify-between gap-x-4">
+              <span className="font-semibold">
+                {t(`hikaya.learning.voiceCommands.${key}`)}
+              </span>
+              <span className="text-ink-3">
+                {t(`hikaya.learning.voiceCommands.${key}Says`)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </SettingsGroup>
+      <SettingsGroup
+        title={t("hikaya.learning.adapt.title")}
+        description={t("hikaya.learning.adapt.description")}
+      >
+        <ToggleSwitch
+          checked={prefs.adapt_to_app}
+          onChange={(on) => void save({ adapt_to_app: on })}
+          isUpdating={saving}
+          label={t("hikaya.learning.adapt.toggle")}
+          description={t("hikaya.learning.adapt.toggleHint")}
+          grouped
+        />
+        <ul className="px-4 py-3 space-y-1.5 text-sm">
+          {APP_KINDS.map((key) => (
+            <li key={key} className="flex flex-wrap justify-between gap-x-4">
+              <span className="font-semibold">
+                {t(`hikaya.learning.adapt.${key}`)}
+              </span>
+              <span className="text-ink-3">
+                {t(`hikaya.learning.adapt.${key}Does`)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </SettingsGroup>
+    </>
   );
 };
 
@@ -236,7 +267,7 @@ export const LearningSettings: React.FC = () => {
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       {stats && <StatsPanel stats={stats} />}
-      <VoiceCommandsPanel />
+      <PrefsPanels />
       <SettingsGroup
         title={t("hikaya.learning.proposals.title")}
         description={t("hikaya.learning.proposals.description")}

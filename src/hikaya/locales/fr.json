@@ -58,6 +58,18 @@
       "scratch": "Effacer la phrase précédente",
       "scratchSays": "« supprime ça », « delete that »",
       "saveError": "Impossible d’enregistrer le réglage des commandes vocales"
+    },
+    "adapt": {
+      "title": "S’adapter à l’app",
+      "description": "Hikaya note l’app dans laquelle vous dictez et y adapte le nettoyage par l’IA. Sous Windows pour l’instant.",
+      "toggle": "S’adapter à l’app où vous dictez",
+      "toggleHint": "Désactivé, toutes les apps ont le même nettoyage.",
+      "chat": "Messageries (Slack, Teams, WhatsApp…)",
+      "chatDoes": "ton détendu, pas de point après une phrase courte",
+      "terminal": "Terminaux",
+      "terminalDoes": "les commandes restent en minuscules, telles que dites",
+      "code": "Éditeurs de code",
+      "codeDoes": "mots de code, noms de fichiers et symboles conservés"
     }
   },
   "correction": {
