@@ -56,6 +56,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       };
       const state = {
         rules: [] as Rule[],
+        prefs: { voice_commands: true },
         proposals: [...proposals],
         nextId: 1,
         calls: [] as { cmd: string; args: unknown }[],
@@ -134,6 +135,11 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           state.proposals = state.proposals.filter(
             (p) => p.pattern !== pattern,
           );
+          return null;
+        },
+        hikaya_get_prefs: () => state.prefs,
+        hikaya_set_prefs: ({ prefs }) => {
+          state.prefs = prefs;
           return null;
         },
         hikaya_stats: () => ({
