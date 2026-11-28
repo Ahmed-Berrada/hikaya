@@ -201,6 +201,31 @@
     "phone_recording": {
       "title": "Phone Recording Not Transcribed",
       "detail": "The hub keeps the audio and will offer it again."
+    },
+    "command_no_selection": {
+      "title": "No Text Selected",
+      "detail": "Command mode works on selected text: select some, then hold the command shortcut and say what to do."
+    },
+    "command_no_model": {
+      "title": "Command Mode Needs an AI Model",
+      "detail": "Choose a provider and a model in Post Processing (Ollama works offline)."
+    },
+    "command_failed": {
+      "title": "Command Not Applied",
+      "detail": "Your text was left as it was."
+    },
+    "command_translated": {
+      "title": "Command Not Applied",
+      "detail": "The model changed the language of your text, so it was left as it was. Say “translate to…” to translate."
     }
+  },
+  "command": {
+    "title": "Command mode",
+    "description": "Select text anywhere, hold this shortcut and say what to do: “make it shorter”, “turn this into a list”, “traduis en anglais”. The selection is replaced by the result. Uses the AI model chosen in Post Processing.",
+    "examples": "Try: “make it more formal”, “fix the grammar”, “translate to French”."
+  },
+  "commandBinding": {
+    "name": "Command Mode",
+    "description": "Select text, hold this and say what to do with it."
   }
 }
