@@ -146,6 +146,20 @@ pub fn hikaya_hub_disconnect(
     Ok(worker.status())
 }
 
+/// Hikaya's own preferences.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_get_prefs(store: Store<'_>) -> super::store::Prefs {
+    store.prefs()
+}
+
+/// Saves Hikaya's own preferences.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_set_prefs(store: Store<'_>, prefs: super::store::Prefs) -> Result<(), String> {
+    store.set_prefs(prefs).map_err(text_error)
+}
+
 /// Usage numbers for the Learning screen.
 #[tauri::command]
 #[specta::specta]

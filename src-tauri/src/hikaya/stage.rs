@@ -3,6 +3,7 @@
 
 use super::store::LearningStore;
 use hikaya_core::{
+    commands::apply_commands,
     fillers::strip_fillers,
     rules::{apply_rules, Rule},
     token::{join, tokenize},
@@ -20,9 +21,13 @@ pub struct StageInput<'a> {
     pub extra_fillers: &'a [String],
     /// The user's replacement rules.
     pub rules: &'a [Rule],
+    /// Whether "new line", "scratch that" and their French forms act.
+    pub voice_commands: bool,
 }
 
-/// Removes fillers for all of the user's languages, then applies their rules.
+/// Removes fillers for all of the user's languages, applies their rules,
+/// then spoken commands. Commands come last because the steps before them
+/// rebuild the text with single spaces, which would undo a line break.
 /// Blank input is returned unchanged so "nothing was said" stays detectable.
 pub fn apply_stage(text: &str, input: &StageInput) -> String {
     if text.trim().is_empty() {
@@ -38,6 +43,15 @@ pub fn apply_stage(text: &str, input: &StageInput) -> String {
     }
     if !input.rules.is_empty() {
         text = keep_original_unless_changed(&text, apply_rules(&text, input.rules, None));
+    }
+    if input.voice_commands {
+        // "fr-CA" speaks French commands too.
+        let bases: Vec<String> = languages
+            .iter()
+            .map(|l| l.split(['-', '_']).next().unwrap_or(l).to_lowercase())
+            .collect();
+        let bases: Vec<&str> = bases.iter().map(String::as_str).collect();
+        text = apply_commands(&text, &bases);
     }
     text
 }
@@ -61,6 +75,9 @@ pub fn apply(app: &AppHandle, text: String) -> String {
         .map(|store| store.active_rules())
         .unwrap_or_default();
     let extra_fillers = settings.custom_filler_words.clone().unwrap_or_default();
+    let voice_commands = app
+        .try_state::<Arc<LearningStore>>()
+        .is_none_or(|store| store.prefs().voice_commands);
     apply_stage(
         &text,
         &StageInput {
@@ -68,6 +85,7 @@ pub fn apply(app: &AppHandle, text: String) -> String {
             remove_fillers: settings.filler_word_removal_enabled,
             extra_fillers: &extra_fillers,
             rules: &rules,
+            voice_commands,
         },
     )
 }
@@ -86,7 +104,27 @@ mod tests {
             remove_fillers,
             extra_fillers: &[],
             rules,
+            voice_commands: true,
         }
+    }
+
+    #[test]
+    fn commands_run_after_fillers_and_rules_and_keep_their_line_break() {
+        let languages = vec!["en".to_string(), "fr-FR".to_string()];
+        let rules = vec![Rule::new("get hub", "GitHub")];
+        assert_eq!(
+            apply_stage(
+                "Euh j'ai poussé sur get hub. À la ligne. Um we ship Friday.",
+                &input(&languages, true, &rules)
+            ),
+            "J'ai poussé sur GitHub.\nWe ship Friday."
+        );
+        let mut off = input(&languages, true, &rules);
+        off.voice_commands = false;
+        assert_eq!(
+            apply_stage("Bonjour. À la ligne. Merci.", &off),
+            "Bonjour. À la ligne. Merci."
+        );
     }
 
     #[test]

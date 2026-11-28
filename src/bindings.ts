@@ -1109,6 +1109,23 @@ async hikayaStats() : Promise<Result<Stats, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Hikaya's own preferences.
+ */
+async hikayaGetPrefs() : Promise<Prefs> {
+    return await TAURI_INVOKE("hikaya_get_prefs");
+},
+/**
+ * Saves Hikaya's own preferences.
+ */
+async hikayaSetPrefs(prefs: Prefs) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_set_prefs", { prefs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async hikayaMeetingStart(title: string) : Promise<Result<ActiveMeeting, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_start", { title }) };
@@ -1679,6 +1696,14 @@ export type PostProcessApiFormat =
  */
 "anthropic"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+/**
+ * Hikaya's own preferences, as the UI reads and writes them.
+ */
+export type Prefs = { 
+/**
+ * "New line", "scratch that" and their French forms act as commands.
+ */
+voice_commands: boolean }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
