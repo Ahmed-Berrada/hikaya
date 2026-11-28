@@ -62,7 +62,8 @@ The device token is shown once. Only its SHA-256 is stored.
 - Rules are shared: any device may change one, and the newest `updated_at` wins. A deleted rule
   stays as a tombstone so the deletion reaches every device.
 - Custom words work the same way, with the word itself as the id: adding a word on one computer
-  adds it on the others, and removing it removes it everywhere. Words are case-sensitive. After
+  adds it on the others, and removing it removes it everywhere. Words are case-sensitive. Snippets
+  (a spoken cue and the text it types) are shared the same way, by id. After
   switching a computer to a new hub, a word removed long ago may come back from another computer
   that still had it: remove it again.
 - A push is applied all or nothing, and holds at most 500 records.

@@ -5,6 +5,7 @@
 //! - Rules: the newest `updated_at` wins, deletions included. Each accepted
 //!   change gets the next sequence number, which is the pull cursor.
 //! - Custom words: like rules, keyed by the word itself.
+//! - Snippets: like rules.
 //! - Substitutions: insert once; they never change.
 //!
 //! A device can only overwrite records it created. Ids are global, so a
@@ -12,8 +13,8 @@
 
 use anyhow::{Context, Result};
 use hikaya_core::sync::{
-    clean_word, DictationRecord, PullResponse, PushRequest, PushResponse, RuleRecord, WordRecord,
-    MAX_RECORDS_PER_PUSH, MAX_TEXT_BYTES,
+    clean_word, DictationRecord, PullResponse, PushRequest, PushResponse, RuleRecord,
+    SnippetRecord, WordRecord, MAX_RECORDS_PER_PUSH, MAX_TEXT_BYTES,
 };
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -82,6 +83,15 @@ fn validate(request: &PushRequest) -> Result<(), PushError> {
     for m in &request.meetings {
         check_id(&m.id)?;
         crate::meetings::validate(m)?;
+    }
+    for s in &request.snippets {
+        check_id(&s.id)?;
+        if !s.deleted && !hikaya_core::snippets::valid(&s.cue, &s.text) {
+            return Err(PushError::Invalid(
+                s.id.clone(),
+                "a snippet needs a cue of at most 100 bytes and a text of at most 4000".into(),
+            ));
+        }
     }
     for w in &request.words {
         if clean_word(&w.word) != Some(w.word.as_str()) {
@@ -200,6 +210,31 @@ fn apply_word(tx: &Transaction<'_>, device: i64, w: &WordRecord) -> Result<bool,
     Ok(true)
 }
 
+fn apply_snippet(tx: &Transaction<'_>, device: i64, s: &SnippetRecord) -> Result<bool, PushError> {
+    let current: Option<i64> = tx
+        .query_row(
+            "SELECT updated_at FROM snippets WHERE id = ?1",
+            params![s.id],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("reading a snippet")?;
+    // Shared like rules: the newest change wins, whichever device made it.
+    if current.is_some_and(|updated_at| updated_at >= s.updated_at) {
+        return Ok(false);
+    }
+    let seq = next_seq(tx)?;
+    tx.execute(
+        "INSERT INTO snippets (id, device_id, cue, text, updated_at, deleted, seq)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+         ON CONFLICT (id) DO UPDATE SET device_id = ?2, cue = ?3, text = ?4, updated_at = ?5,
+           deleted = ?6, seq = ?7",
+        params![s.id, device, s.cue, s.text, s.updated_at, s.deleted, seq],
+    )
+    .context("saving a snippet")?;
+    Ok(true)
+}
+
 /// Applies a push from `device` in one transaction: all of it or none of it.
 pub fn push(
     conn: &mut Connection,
@@ -209,8 +244,10 @@ pub fn push(
     validate(request)?;
     let tx = conn.transaction().context("starting the push")?;
     let mut response = PushResponse {
-        // Always sent, so a device can tell this hub stores custom words.
+        // Always sent, so a device can tell this hub stores custom words and
+        // snippets.
         words: Some(0),
+        snippets: Some(0),
         ..Default::default()
     };
     for d in &request.dictations {
@@ -238,6 +275,9 @@ pub fn push(
     }
     for w in &request.words {
         *response.words.get_or_insert(0) += usize::from(apply_word(&tx, device, w)?);
+    }
+    for s in &request.snippets {
+        *response.snippets.get_or_insert(0) += usize::from(apply_snippet(&tx, device, s)?);
     }
     tx.commit().context("committing the push")?;
     Ok(response)
@@ -293,9 +333,33 @@ pub fn pull(conn: &Connection, since: i64) -> Result<PullResponse> {
             word
         })
         .collect();
+    let mut statement = conn.prepare(
+        "SELECT id, cue, text, updated_at, deleted, seq FROM snippets WHERE seq > ?1 ORDER BY seq",
+    )?;
+    let snippets = statement
+        .query_map(params![since], |row| {
+            Ok((
+                SnippetRecord {
+                    id: row.get(0)?,
+                    cue: row.get(1)?,
+                    text: row.get(2)?,
+                    updated_at: row.get(3)?,
+                    deleted: row.get(4)?,
+                },
+                row.get::<_, i64>(5)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .into_iter()
+        .map(|(snippet, seq)| {
+            cursor = cursor.max(seq);
+            snippet
+        })
+        .collect();
     Ok(PullResponse {
         rules,
         words,
+        snippets,
         cursor,
     })
 }
@@ -605,6 +669,57 @@ mod tests {
         let changes = pull(&conn, first.cursor).expect("pull");
         assert_eq!(changes.words, vec![removed]);
         assert!(changes.rules.is_empty());
+    }
+
+    #[test]
+    fn snippets_newest_wins_and_flow_to_other_devices() {
+        let (mut conn, laptop, phone) = setup();
+        let snippet = |at: i64, text: &str, deleted: bool| SnippetRecord {
+            id: "s1".into(),
+            cue: "my address".into(),
+            text: text.into(),
+            updated_at: at,
+            deleted,
+        };
+        let push_one = |conn: &mut Connection, device, s: SnippetRecord| {
+            push(
+                conn,
+                device,
+                &PushRequest {
+                    snippets: vec![s],
+                    ..Default::default()
+                },
+            )
+            .expect("push")
+            .snippets
+        };
+        assert_eq!(
+            push_one(&mut conn, laptop, snippet(100, "12 rue\nParis", false)),
+            Some(1)
+        );
+        let first = pull(&conn, 0).expect("pull");
+        assert_eq!(first.snippets[0].text, "12 rue\nParis");
+        assert_eq!(push_one(&mut conn, phone, snippet(300, "", true)), Some(1));
+        assert_eq!(
+            push_one(&mut conn, laptop, snippet(200, "old", false)),
+            Some(0)
+        );
+        let changes = pull(&conn, first.cursor).expect("pull");
+        assert_eq!(changes.snippets.len(), 1);
+        assert!(changes.snippets[0].deleted);
+        // A live snippet needs a cue and a text.
+        let bad = push(
+            &mut conn,
+            laptop,
+            &PushRequest {
+                snippets: vec![SnippetRecord {
+                    cue: "  ".into(),
+                    ..snippet(400, "x", false)
+                }],
+                ..Default::default()
+            },
+        );
+        assert!(matches!(bad, Err(PushError::Invalid(..))));
     }
 
     #[test]
