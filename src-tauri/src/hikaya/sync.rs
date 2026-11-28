@@ -500,6 +500,7 @@ impl LearningStore {
                     end_ms: l.end_ms,
                     speaker: l.speaker.as_str().into(),
                     text: l.text,
+                    voice: l.voice,
                 })
                 .collect();
             meetings.push(meeting);
@@ -1665,6 +1666,7 @@ mod tests {
                         end_ms: start + 30_000,
                         speaker,
                         text: text.into(),
+                        voice: None,
                     },
                 )
                 .expect("line");

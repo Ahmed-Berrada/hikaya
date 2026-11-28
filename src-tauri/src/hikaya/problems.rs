@@ -33,6 +33,8 @@ pub enum Problem {
     CommandUnsupported,
     /// The user switched apps before the result was ready.
     CommandFocusMoved,
+    /// A meeting's speakers could not be told apart; the transcript is kept.
+    SpeakersFailed,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -89,6 +91,7 @@ mod tests {
             (Problem::CommandTranslated, "command_translated"),
             (Problem::CommandUnsupported, "command_unsupported"),
             (Problem::CommandFocusMoved, "command_focus_moved"),
+            (Problem::SpeakersFailed, "speakers_failed"),
         ] {
             assert_eq!(
                 serde_json::to_string(&kind).expect("json"),

@@ -63,6 +63,49 @@ pub fn hikaya_meeting_rename(
     Ok(())
 }
 
+/// Splits a past meeting's other people by voice, when its audio is still
+/// kept. Returns how many voices were found (fewer than two changes
+/// nothing).
+#[tauri::command]
+#[specta::specta]
+pub async fn hikaya_meeting_split_speakers(app: AppHandle, id: i64) -> Result<u32, String> {
+    use tauri::Manager;
+    let worker = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let store = worker
+            .try_state::<std::sync::Arc<crate::hikaya::store::LearningStore>>()
+            .ok_or("Hikaya's database is unavailable")?;
+        let meetings = worker
+            .try_state::<std::sync::Arc<super::manager::MeetingManager>>()
+            .ok_or("meetings are unavailable")?;
+        let dir = meetings.audio_dir(id).map_err(text_error)?;
+        if !dir.exists() {
+            return Err("this meeting's audio was already deleted".to_string());
+        }
+        super::speakers::split(&worker, &store, id, &dir)
+            .inspect(|_| super::manager::MeetingManager::emit(&worker, id))
+            .map_err(text_error)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Names one voice of a meeting ("Speaker 2" → "Sarah"). An empty name
+/// goes back to the number.
+#[tauri::command]
+#[specta::specta]
+pub fn hikaya_meeting_rename_voice(
+    app: AppHandle,
+    store: Store<'_>,
+    id: i64,
+    voice: u32,
+    name: String,
+) -> Result<(), String> {
+    store.rename_voice(id, voice, &name).map_err(text_error)?;
+    sync_soon(&app);
+    Ok(())
+}
+
 /// Sends the change to the hub right away, if one is connected.
 fn sync_soon(app: &AppHandle) {
     use tauri::Manager;
@@ -87,10 +130,13 @@ pub async fn hikaya_meeting_summarize(
     you: String,
     others: String,
     room: String,
+    voice: String,
 ) -> Result<String, String> {
     let model = SummaryModel::from_settings(&crate::settings::get_settings(&app))?;
     let lines = store.meeting_lines(id).map_err(text_error)?;
-    let summary = summarize(&model, &lines, &SpeakerNames { you, others, room }).await?;
+    let mut names = SpeakerNames::new(&you, &others, &room, &voice);
+    names.voices = store.voice_names(id).map_err(text_error)?;
+    let summary = summarize(&model, &lines, &names).await?;
     store
         .set_meeting_summary(id, &summary, model.name())
         .map_err(text_error)?;
@@ -104,6 +150,8 @@ pub struct ExportLabels {
     pub you: String,
     pub others: String,
     pub room: String,
+    /// A voice the user has not named, with `{n}` for its number.
+    pub voice: String,
     pub summary: String,
     pub transcript: String,
     /// The meeting's start, already formatted for the user.
@@ -132,11 +180,8 @@ pub fn hikaya_meeting_export(
         .map_err(text_error)?
         .ok_or("no such meeting")?;
     let lines = store.meeting_lines(id).map_err(text_error)?;
-    let names = SpeakerNames {
-        you: labels.you,
-        others: labels.others,
-        room: labels.room,
-    };
+    let mut names = SpeakerNames::new(&labels.you, &labels.others, &labels.room, &labels.voice);
+    names.voices = store.voice_names(id).map_err(text_error)?;
     Ok(match format {
         ExportFormat::Markdown => to_markdown(&MeetingExport {
             title: &detail.meeting.title,
