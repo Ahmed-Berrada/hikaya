@@ -49,6 +49,9 @@ Open Notepad and use the transcribe shortcut.
 - [ ] Snippets: Learning → Snippets, save "my address" with two lines. Dictate "send it to my
       address" into Notepad: both lines are typed. It appears on the hub's other computers after
       a sync.
+- [ ] Speakers (beta): Meetings → turn on "Tell speakers apart". Record a call with two or more
+      other people for ten minutes and stop. The first time, about 32 MB downloads. Time how long
+      until the transcript shows Speaker 1, Speaker 2: \_\_\_ min. Name one: the summary uses it.
 
 ## Learning
 
