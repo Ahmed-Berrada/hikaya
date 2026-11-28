@@ -881,8 +881,10 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
+                            // Hikaya: a command's instruction and result are not a dictation.
+                            let command = crate::hikaya::target::is_command();
                             // Save to history if WAV was saved
-                            if wav_saved {
+                            if wav_saved && !command {
                                 match hm.save_entry(
                                     file_name,
                                     transcription,
@@ -901,10 +903,17 @@ impl ShortcutAction for TranscribeAction {
 
                             // The user's hook only changes what gets pasted;
                             // history above keeps the text as produced.
-                            let Some(final_text) = complete_unless_cancelled(
-                                crate::transcription_hook::apply(&ah, processed.final_text),
-                                || rm.was_cancelled_since(cancel_generation),
-                            )
+                            let hooked = async {
+                                if command {
+                                    processed.final_text
+                                } else {
+                                    crate::transcription_hook::apply(&ah, processed.final_text)
+                                        .await
+                                }
+                            };
+                            let Some(final_text) = complete_unless_cancelled(hooked, || {
+                                rm.was_cancelled_since(cancel_generation)
+                            })
                             .await
                             else {
                                 debug!("Transcription operation cancelled during hook");
@@ -914,6 +923,8 @@ impl ShortcutAction for TranscribeAction {
                             };
 
                             if final_text.is_empty() {
+                                // Hikaya: a command that did nothing has said why.
+                                let input_silent = input_silent && !command;
                                 finish_without_text(&ah, input_silent, sample_count, stop_time);
                             } else {
                                 let ah_clone = ah.clone();
@@ -941,46 +952,50 @@ impl ShortcutAction for TranscribeAction {
                                         // UI while this paste ran.
                                         let owns_ui =
                                             || RECORDING_SESSION.load(Ordering::SeqCst) == session;
-                                        let (outcome, notice) =
-                                            match utils::paste(final_text, ah_clone.clone()) {
-                                                Ok(utils::PasteOutcome::Pasted) => {
-                                                    debug!(
-                                                        "Text pasted successfully in {:?}",
-                                                        paste_time.elapsed()
+                                        let pasted = if command {
+                                            utils::paste_replacement(final_text, ah_clone.clone())
+                                        } else {
+                                            utils::paste(final_text, ah_clone.clone())
+                                        };
+                                        let (outcome, notice) = match pasted {
+                                            Ok(utils::PasteOutcome::Pasted) => {
+                                                debug!(
+                                                    "Text pasted successfully in {:?}",
+                                                    paste_time.elapsed()
+                                                );
+                                                // Leave a newer session's notice alone.
+                                                if owns_ui() {
+                                                    notices::clear(
+                                                        &ah_clone,
+                                                        NoticeSource::Dictation,
                                                     );
-                                                    // Leave a newer session's notice alone.
-                                                    if owns_ui() {
-                                                        notices::clear(
-                                                            &ah_clone,
-                                                            NoticeSource::Dictation,
-                                                        );
-                                                    }
-                                                    let notice = post_process_failed.then(|| {
-                                                        Notice::new(
-                                                            NoticeCode::PostProcessFailed,
-                                                            NoticeSource::Dictation,
-                                                        )
-                                                    });
-                                                    (TranscriptionOutcome::Typed, notice)
                                                 }
-                                                Ok(utils::PasteOutcome::Blocked) => (
+                                                let notice = post_process_failed.then(|| {
+                                                    Notice::new(
+                                                        NoticeCode::PostProcessFailed,
+                                                        NoticeSource::Dictation,
+                                                    )
+                                                });
+                                                (TranscriptionOutcome::Typed, notice)
+                                            }
+                                            Ok(utils::PasteOutcome::Blocked) => (
+                                                TranscriptionOutcome::Failed,
+                                                Some(Notice::new(
+                                                    NoticeCode::PasteBlockedElevated,
+                                                    NoticeSource::Dictation,
+                                                )),
+                                            ),
+                                            Err(e) => {
+                                                error!("Failed to paste transcription: {}", e);
+                                                (
                                                     TranscriptionOutcome::Failed,
                                                     Some(Notice::new(
-                                                        NoticeCode::PasteBlockedElevated,
+                                                        NoticeCode::PasteFailed,
                                                         NoticeSource::Dictation,
                                                     )),
-                                                ),
-                                                Err(e) => {
-                                                    error!("Failed to paste transcription: {}", e);
-                                                    (
-                                                        TranscriptionOutcome::Failed,
-                                                        Some(Notice::new(
-                                                            NoticeCode::PasteFailed,
-                                                            NoticeSource::Dictation,
-                                                        )),
-                                                    )
-                                                }
-                                            };
+                                                )
+                                            }
+                                        };
                                         match (owns_ui(), notice) {
                                             (true, Some(notice)) => {
                                                 notices::raise(&ah_clone, notice)

@@ -26,7 +26,7 @@ pub const BINDING: &str = "hikaya_command";
 const MODEL_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// How long to wait for the app to put the selection on the clipboard.
-const COPY_TIMEOUT: Duration = Duration::from_millis(600);
+const COPY_TIMEOUT: Duration = Duration::from_millis(1000);
 
 /// The command shortcut: a post-processed dictation marked as a command.
 pub struct CommandAction(pub Arc<dyn ShortcutAction>);
@@ -58,16 +58,6 @@ pub async fn process(app: &AppHandle, instruction: &str) -> ProcessedTranscripti
     if instruction.is_empty() {
         return nothing();
     }
-    let copier = app.clone();
-    let selection = tauri::async_runtime::spawn_blocking(move || copy_selection(&copier))
-        .await
-        .ok()
-        .flatten();
-    let Some(selection) = selection.filter(|s| command::selection_fits(s)) else {
-        report(app, Problem::CommandNoSelection, None, "");
-        return nothing();
-    };
-
     let settings = get_settings(app);
     let Some(provider) = settings.active_post_process_provider().cloned() else {
         report(app, Problem::CommandNoModel, None, "");
@@ -82,6 +72,29 @@ pub async fn process(app: &AppHandle, instruction: &str) -> ProcessedTranscripti
         report(app, Problem::CommandNoModel, None, "");
         return nothing();
     }
+
+    let copier = app.clone();
+    let copied = tauri::async_runtime::spawn_blocking(move || copy_selection(&copier))
+        .await
+        .unwrap_or(Copy::Failed("the copy step stopped".into()));
+    let selection = match copied {
+        Copy::Selected(text) if command::selection_fits(&text) => text,
+        Copy::Selected(_) | Copy::Nothing => {
+            report(app, Problem::CommandNoSelection, None, "");
+            return nothing();
+        }
+        Copy::Unsupported => {
+            report(app, Problem::CommandUnsupported, None, "");
+            return nothing();
+        }
+        Copy::Failed(why) => {
+            report(app, Problem::CommandFailed, None, why);
+            return nothing();
+        }
+    };
+    // The app the selection came from; the result must go back to it.
+    let source = hikaya_foreground::foreground().map(|f| f.process);
+
     let api_key = settings
         .post_process_api_keys
         .get(&provider.id)
@@ -141,6 +154,12 @@ pub async fn process(app: &AppHandle, instruction: &str) -> ProcessedTranscripti
         report(app, Problem::CommandTranslated, None, "");
         return nothing();
     }
+    if hikaya_foreground::foreground().map(|f| f.process) != source {
+        // The user switched apps while the model worked: pasting now would
+        // put the result somewhere else.
+        report(app, Problem::CommandFocusMoved, None, "");
+        return nothing();
+    }
     ProcessedTranscription {
         final_text: result.clone(),
         post_processed_text: Some(result),
@@ -149,53 +168,91 @@ pub async fn process(app: &AppHandle, instruction: &str) -> ProcessedTranscripti
     }
 }
 
+/// What reading the selection gave.
+enum Copy {
+    /// The selected text.
+    Selected(String),
+    /// Nothing was selected (the copy left the clipboard alone).
+    Nothing,
+    /// This system gives Hikaya no way to send the copy shortcut (Wayland).
+    Unsupported,
+    /// The clipboard could not be used, or put back.
+    Failed(String),
+}
+
 /// Copies the focused app's selection and gives it back, leaving the
-/// clipboard as it was. `None` when nothing is selected or the system
-/// cannot send the copy shortcut (Wayland).
-fn copy_selection(app: &AppHandle) -> Option<String> {
+/// clipboard as it was. Holds the clipboard against Handy's paste
+/// meanwhile, so a paste from an earlier dictation is never read as the
+/// selection.
+fn copy_selection(app: &AppHandle) -> Copy {
     #[cfg(target_os = "linux")]
     if crate::utils::is_wayland() {
-        log::warn!("Command mode cannot copy the selection on Wayland");
-        return None;
+        return Copy::Unsupported;
     }
+    let _clipboard_held = crate::utils::lock_clipboard();
     let clipboard = app.clipboard();
-    let saved_text = clipboard.read_text().ok();
-    let saved_image = if saved_text.as_deref().is_none_or(str::is_empty) {
-        clipboard.read_image().ok().map(|image| image.to_owned())
-    } else {
-        None
-    };
-    // A marker no app would copy: if it is still there, nothing was selected.
-    let marker = format!("hikaya-command-{}", std::process::id());
-    clipboard.write_text(marker.clone()).ok()?;
-    if let Err(e) = send_copy(app) {
-        log::warn!("Command mode could not send the copy shortcut: {e}");
+    // Only text or an image can be put back; for anything else (files,
+    // formatted content alone) the copy would lose what the user had.
+    enum Saved {
+        Text(String),
+        Image(tauri::image::Image<'static>),
+        Empty,
     }
-    let started = Instant::now();
-    let mut copied = None;
-    while started.elapsed() < COPY_TIMEOUT {
-        std::thread::sleep(Duration::from_millis(25));
-        match clipboard.read_text() {
-            Ok(text) if text != marker => {
-                copied = Some(text);
-                break;
+    let saved = match clipboard.read_text() {
+        Ok(text) if !text.is_empty() => Saved::Text(text),
+        _ => match clipboard.read_image() {
+            Ok(image) => Saved::Image(image.to_owned()),
+            Err(_) if clipboard.read_text().is_ok() => Saved::Empty,
+            Err(_) => {
+                return Copy::Failed(
+                    "The clipboard holds something Hikaya cannot put back (files or formatted text). Copy some plain text, then try again."
+                        .into(),
+                )
             }
-            _ => {}
+        },
+    };
+    // Unique per run, so a clipboard manager or a second run never mistakes
+    // one marker for another.
+    static RUN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let marker = format!(
+        "hikaya-command-{}-{}",
+        std::process::id(),
+        RUN.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    );
+    if let Err(e) = clipboard.write_text(marker.clone()) {
+        return Copy::Failed(format!("The clipboard could not be used: {e}"));
+    }
+    let sent = send_copy(app);
+    let mut copied = None;
+    if sent.is_ok() {
+        let started = Instant::now();
+        while started.elapsed() < COPY_TIMEOUT {
+            std::thread::sleep(Duration::from_millis(25));
+            if let Ok(text) = clipboard.read_text() {
+                if text != marker {
+                    copied = Some(text);
+                    break;
+                }
+            }
         }
     }
-    let restored = match (saved_text.filter(|t| !t.is_empty()), saved_image) {
-        (Some(text), _) => clipboard.write_text(text),
-        (None, Some(image)) => clipboard.write_image(&image),
-        (None, None) => clipboard.clear(),
+    let restored = match saved {
+        Saved::Text(text) => clipboard.write_text(text),
+        Saved::Image(image) => clipboard.write_image(&image),
+        Saved::Empty => clipboard.clear(),
     };
     if let Err(e) = restored {
         log::warn!("Command mode could not restore the clipboard: {e}");
     }
-    copied
+    match (sent, copied) {
+        (Err(e), _) => Copy::Failed(format!("The copy shortcut could not be sent: {e}")),
+        (Ok(()), Some(text)) => Copy::Selected(text),
+        (Ok(()), None) => Copy::Nothing,
+    }
 }
 
 /// Sends Ctrl+C (Cmd+C on macOS) to the focused app, on the main thread as
-/// Handy's paste does.
+/// Handy's paste does. Gives up after a second if the main thread is busy.
 fn send_copy(app: &AppHandle) -> Result<(), String> {
     use enigo::{Direction, Key, Keyboard};
     #[cfg(target_os = "macos")]
@@ -226,6 +283,6 @@ fn send_copy(app: &AppHandle) -> Result<(), String> {
         let _ = tx.send(result);
     })
     .map_err(|e| e.to_string())?;
-    rx.recv()
-        .map_err(|_| "the main thread dropped the copy".to_string())?
+    rx.recv_timeout(Duration::from_secs(1))
+        .map_err(|_| "the app was busy".to_string())?
 }

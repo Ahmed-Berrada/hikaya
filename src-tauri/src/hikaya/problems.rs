@@ -29,6 +29,10 @@ pub enum Problem {
     CommandFailed,
     /// The model changed the text's language unasked; the text was kept.
     CommandTranslated,
+    /// Command mode cannot read the selection on this system (Wayland).
+    CommandUnsupported,
+    /// The user switched apps before the result was ready.
+    CommandFocusMoved,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -83,6 +87,8 @@ mod tests {
             (Problem::CommandNoModel, "command_no_model"),
             (Problem::CommandFailed, "command_failed"),
             (Problem::CommandTranslated, "command_translated"),
+            (Problem::CommandUnsupported, "command_unsupported"),
+            (Problem::CommandFocusMoved, "command_focus_moved"),
         ] {
             assert_eq!(
                 serde_json::to_string(&kind).expect("json"),

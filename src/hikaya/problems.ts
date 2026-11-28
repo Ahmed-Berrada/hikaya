@@ -15,7 +15,9 @@ export type ProblemKind =
   | "command_no_selection"
   | "command_no_model"
   | "command_failed"
-  | "command_translated";
+  | "command_translated"
+  | "command_unsupported"
+  | "command_focus_moved";
 
 export interface Problem {
   kind: ProblemKind;

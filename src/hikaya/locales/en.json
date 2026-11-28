@@ -217,6 +217,14 @@
     "command_translated": {
       "title": "Command Not Applied",
       "detail": "The model changed the language of your text, so it was left as it was. Say “translate to…” to translate."
+    },
+    "command_unsupported": {
+      "title": "Command Mode Unavailable",
+      "detail": "On Wayland, Hikaya cannot read the selected text. It works on Windows, macOS and X11."
+    },
+    "command_focus_moved": {
+      "title": "Command Not Applied",
+      "detail": "You switched apps before the result was ready, so it was not pasted. Your text was left as it was."
     }
   },
   "command": {
