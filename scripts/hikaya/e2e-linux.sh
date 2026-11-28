@@ -155,6 +155,10 @@ if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
   curl -fs -X POST "$HUB_URL/api/sync/push" -H "authorization: Bearer $READER" -H 'content-type: application/json' \
     -d "{\"words\":[{\"word\":\"Kubernetes\",\"updated_at\":$(date +%s%3N)}]}" >/dev/null \
     || die "could not add the remote custom word"
+  # A snippet made on "another device", which must change the dictation.
+  curl -fs -X POST "$HUB_URL/api/sync/push" -H "authorization: Bearer $READER" -H 'content-type: application/json' \
+    -d "{\"snippets\":[{\"id\":\"phone-snippet-1\",\"cue\":\"my fellow\",\"text\":\"my dear fellow\",\"updated_at\":$(date +%s%3N)}]}" >/dev/null \
+    || die "could not add the remote snippet"
 fi
 
 say "adding one local replacement rule"
@@ -168,6 +172,11 @@ db.execute(
 )
 url, token = sys.argv[2], sys.argv[3]
 if url:
+    # A snippet saved on this computer, which must reach the hub.
+    db.execute(
+        "INSERT INTO snippets (uid, cue, text, updated_at) VALUES ('laptop-snippet-1', 'my signature', ?, ?)",
+        ("Ahmed\nHikaya", now),
+    )
     for key, value in (("hub_url", url), ("hub_token", token), ("device_name", "e2e-laptop")):
         db.execute("INSERT INTO sync_settings (key, value) VALUES (?, ?)", (key, value))
 db.commit()
@@ -209,6 +218,7 @@ say "PASS: capture, VAD, speech-to-text, rules and history all work"
 
 if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
   [[ "$lower" == *"your community"* ]] || die "the rule made on another device was not pulled and applied"
+  [[ "$lower" == *"my dear fellow"* ]] || die "the snippet made on another device was not pulled and applied"
   say "waiting for the dictation to reach the hub"
   found=""
   for _ in $(seq 1 30); do
@@ -228,4 +238,9 @@ if [[ -n "${HIKAYA_E2E_HUB:-}" ]]; then
   local_words="$(python3 -c 'import sys,json;print(" ".join(sorted(json.load(open(sys.argv[1]))["settings"]["custom_words"])))' "$DATA/settings_store.json")"
   [[ "$local_words" == "Hikaya Kubernetes" ]] || die "the app has custom words [$local_words], expected [Hikaya Kubernetes]"
   say "PASS: a custom word reached the hub and one from another device reached the app's settings"
+
+  snippets="$(curl -fs "$HUB_URL/api/sync/pull?since=0" -H "authorization: Bearer $READER" \
+    | python3 -c 'import sys,json;print(" | ".join(sorted(s["cue"] + "=" + s["text"].replace("\n","/") for s in json.load(sys.stdin)["snippets"])))')"
+  [[ "$snippets" == "my fellow=my dear fellow | my signature=Ahmed/Hikaya" ]] || die "the hub has snippets [$snippets]"
+  say "PASS: a snippet reached the hub, and one from another device changed the dictation"
 fi

@@ -117,7 +117,8 @@ What still separates Hikaya's dictation from the best cloud tools, all done loca
   what to do ("make it shorter", "traduis en anglais"); the selection is replaced by the result,
   with the AI model chosen in Post Processing. A result in another language than the text, when no
   translation was asked, is refused. Done; checked with `eval/command/`, to try on Windows.
-- **Snippets**: a short spoken cue ("my address") types a saved text.
+- **Snippets**: a short spoken cue ("my address", "mon lien calendly") types a saved text, line
+  breaks included, synced to the other computers through the hub. Done.
 
 ## Evaluation data
 
