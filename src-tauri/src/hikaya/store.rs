@@ -141,12 +141,15 @@ const MIGRATIONS: &[M] = &[
 pub struct Prefs {
     /// "New line", "scratch that" and their French forms act as commands.
     pub voice_commands: bool,
+    /// The cleanup and per-app rules follow the app dictated into.
+    pub adapt_to_app: bool,
 }
 
 impl Default for Prefs {
     fn default() -> Self {
         Self {
             voice_commands: true,
+            adapt_to_app: true,
         }
     }
 }
@@ -250,15 +253,18 @@ impl LearningStore {
     pub fn prefs(&self) -> Prefs {
         let read = || -> Result<Prefs> {
             let conn = self.conn()?;
-            let value: Option<String> = conn
-                .query_row(
-                    "SELECT value FROM prefs WHERE key = 'voice_commands'",
-                    [],
-                    |row| row.get(0),
-                )
-                .optional()?;
+            // Every preference is a switch that is on unless set to false.
+            let on = |key: &str| -> Result<bool> {
+                let value: Option<String> = conn
+                    .query_row("SELECT value FROM prefs WHERE key = ?1", [key], |row| {
+                        row.get(0)
+                    })
+                    .optional()?;
+                Ok(value.as_deref() != Some("false"))
+            };
             Ok(Prefs {
-                voice_commands: value.as_deref() != Some("false"),
+                voice_commands: on("voice_commands")?,
+                adapt_to_app: on("adapt_to_app")?,
             })
         };
         read().unwrap_or_else(|e| {
@@ -269,11 +275,19 @@ impl LearningStore {
 
     /// Saves Hikaya's preferences.
     pub fn set_prefs(&self, prefs: Prefs) -> Result<()> {
-        self.conn()?.execute(
-            "INSERT INTO prefs (key, value) VALUES ('voice_commands', ?1)
-             ON CONFLICT (key) DO UPDATE SET value = ?1",
-            params![prefs.voice_commands.to_string()],
-        )?;
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        for (key, on) in [
+            ("voice_commands", prefs.voice_commands),
+            ("adapt_to_app", prefs.adapt_to_app),
+        ] {
+            tx.execute(
+                "INSERT INTO prefs (key, value) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET value = ?2",
+                params![key, on.to_string()],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -575,6 +589,7 @@ mod tests {
                     extra_fillers: &[],
                     rules: &rules,
                     voice_commands: true,
+                    app: None,
                 }
             ),
             "Demande à Ahmed."
@@ -626,9 +641,11 @@ mod tests {
         store
             .set_prefs(Prefs {
                 voice_commands: false,
+                adapt_to_app: true,
             })
             .expect("save");
         assert!(!store.prefs().voice_commands);
+        assert!(store.prefs().adapt_to_app);
         store.set_prefs(Prefs::default()).expect("save");
         assert!(store.prefs().voice_commands);
     }

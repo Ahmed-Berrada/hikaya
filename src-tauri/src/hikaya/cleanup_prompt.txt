@@ -21,4 +21,6 @@ Examples:
 
 Spelling of names and terms this speaker uses (apply only when the transcript has a word that sounds like one): ${vocabulary}
 
+${context}
+
 Return only the cleaned text.

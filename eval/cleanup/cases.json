@@ -109,5 +109,33 @@
     "input": "bonjour Paul,\nvoici euh le compte rendu, and the slides are attached",
     "keep": ["Bonjour Paul,", "\n", "compte rendu", "the slides are attached"],
     "drop": ["euh", "les diapositives"]
+  },
+  {
+    "id": "context-chat",
+    "context": "The text is a chat message in Slack: keep it casual, and a single short sentence needs no final period.",
+    "input": "euh ok sounds good see you tomorrow",
+    "keep": ["sounds good", "see you tomorrow"],
+    "drop": ["euh", "dear", "best regards"]
+  },
+  {
+    "id": "context-terminal",
+    "context": "The text goes into a terminal (Windows Terminal): keep commands, flags and file names in lowercase, exactly as spoken, with no final period.",
+    "input": "git status",
+    "keep": [],
+    "keep_exact": ["git status"],
+    "drop": ["git status."]
+  },
+  {
+    "id": "email-is-default",
+    "input": "hi marc euh je t'envoie le devis demain, and the invoice next week",
+    "keep": ["je t'envoie le devis demain", "and the invoice next week"],
+    "drop": ["euh", "la facture", "quote"]
+  },
+  {
+    "id": "context-chat-mixed",
+    "context": "The text is a chat message in Slack: keep it casual, and a single short sentence needs no final period.",
+    "input": "euh on se voit demain à dix heures, and bring the slides",
+    "keep": ["on se voit demain", "and bring the slides"],
+    "drop": ["euh", "apporte", "we meet"]
   }
 ]

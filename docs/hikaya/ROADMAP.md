@@ -108,8 +108,11 @@ What still separates Hikaya's dictation from the best cloud tools, all done loca
 - **Voice commands** in English and French: "new line" / "à la ligne", "new paragraph" /
   "nouveau paragraphe", "delete that" / "supprime ça". Done; checked against real speech-to-text
   with `eval/commands/`.
-- **The app you dictate into**: detect it (Windows first), so per-app rules apply and the cleanup
-  can match the place (casual in a chat, formal in an email, code-friendly in an editor).
+- **The app you dictate into**: noted when a dictation starts (Windows; `crates/hikaya-foreground`),
+  so rules scoped to an app apply and the cleanup matches the place: casual in a chat, lowercase
+  commands in a terminal, code words kept in an editor. Email and documents keep the default
+  cleanup: a line asking for "complete sentences" made the small model translate. Done; to try on
+  Windows.
 - **Command mode**: select text, hold a shortcut and say what to do ("make it shorter", "traduis
   en anglais"); the selection is replaced by the result, with the local model.
 - **Snippets**: a short spoken cue ("my address") types a saved text.

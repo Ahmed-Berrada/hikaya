@@ -58,6 +58,18 @@
       "scratch": "Delete the sentence before",
       "scratchSays": "“delete that”, “supprime ça”",
       "saveError": "Could not save the voice commands setting"
+    },
+    "adapt": {
+      "title": "Adapt to the app",
+      "description": "Hikaya notes which app you dictate into and adjusts the AI cleanup to it. Windows only for now.",
+      "toggle": "Adapt to the app you dictate into",
+      "toggleHint": "Off, every app gets the same cleanup.",
+      "chat": "Chats (Slack, Teams, WhatsApp…)",
+      "chatDoes": "casual, no period after one short sentence",
+      "terminal": "Terminals",
+      "terminalDoes": "commands stay in lowercase, as spoken",
+      "code": "Code editors",
+      "codeDoes": "code words, file names and symbols kept"
     }
   },
   "correction": {

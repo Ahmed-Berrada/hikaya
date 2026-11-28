@@ -23,6 +23,8 @@ pub struct StageInput<'a> {
     pub rules: &'a [Rule],
     /// Whether "new line", "scratch that" and their French forms act.
     pub voice_commands: bool,
+    /// The app being dictated into, for rules scoped to one app.
+    pub app: Option<&'a str>,
 }
 
 /// Removes fillers for all of the user's languages, applies their rules,
@@ -42,7 +44,7 @@ pub fn apply_stage(text: &str, input: &StageInput) -> String {
         );
     }
     if !input.rules.is_empty() {
-        text = keep_original_unless_changed(&text, apply_rules(&text, input.rules, None));
+        text = keep_original_unless_changed(&text, apply_rules(&text, input.rules, input.app));
     }
     if input.voice_commands {
         // "fr-CA" speaks French commands too.
@@ -78,6 +80,7 @@ pub fn apply(app: &AppHandle, text: String) -> String {
     let voice_commands = app
         .try_state::<Arc<LearningStore>>()
         .is_none_or(|store| store.prefs().voice_commands);
+    let target = super::target::current();
     apply_stage(
         &text,
         &StageInput {
@@ -86,6 +89,7 @@ pub fn apply(app: &AppHandle, text: String) -> String {
             extra_fillers: &extra_fillers,
             rules: &rules,
             voice_commands,
+            app: target.as_ref().map(|t| t.app.as_str()),
         },
     )
 }
@@ -105,7 +109,23 @@ mod tests {
             extra_fillers: &[],
             rules,
             voice_commands: true,
+            app: None,
         }
+    }
+
+    #[test]
+    fn a_rule_scoped_to_an_app_applies_only_there() {
+        let languages = vec!["en".to_string()];
+        let mut rule = Rule::new("pr", "pull request");
+        rule.app = Some("slack".into());
+        let rules = vec![rule];
+        let mut slack = input(&languages, false, &rules);
+        slack.app = Some("slack");
+        assert_eq!(apply_stage("open a pr", &slack), "open a pull request");
+        assert_eq!(
+            apply_stage("open a pr", &input(&languages, false, &rules)),
+            "open a pr"
+        );
     }
 
     #[test]

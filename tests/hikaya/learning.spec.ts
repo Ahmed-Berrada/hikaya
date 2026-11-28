@@ -1,6 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { mockTauri } from "./tauri-mock";
 
+/** Clicks a switch where a person would: on its visible track, the label
+ * around the hidden checkbox. */
+const flip = (checkbox: import("@playwright/test").Locator) =>
+  checkbox.locator("xpath=..").click();
+
 const openLearning = async (page: import("@playwright/test").Page) => {
   await page.goto("/");
   await page.getByText("Learning", { exact: true }).click();
@@ -68,7 +73,7 @@ test.describe("Learning screen", () => {
       name: "Use the rule “get hub”",
     });
     await expect(toggle).toBeChecked();
-    await toggle.uncheck({ force: true });
+    await flip(toggle);
     await expect(toggle).not.toBeChecked();
 
     await page
@@ -150,7 +155,7 @@ test.describe("Voice commands", () => {
       name: /Act on voice commands/,
     });
     await expect(toggle).toBeChecked();
-    await toggle.uncheck({ force: true });
+    await flip(toggle);
     await expect(toggle).not.toBeChecked();
     const saved = await page.evaluate(() =>
       (window as any).__HIKAYA_MOCK__.state.calls.filter(
@@ -158,7 +163,37 @@ test.describe("Voice commands", () => {
       ),
     );
     expect(saved).toEqual([
-      { cmd: "hikaya_set_prefs", args: { prefs: { voice_commands: false } } },
+      {
+        cmd: "hikaya_set_prefs",
+        args: { prefs: { voice_commands: false, adapt_to_app: true } },
+      },
+    ]);
+  });
+
+  test("adapting to the app has its own switch", async ({ page }) => {
+    await mockTauri(page);
+    await openLearning(page);
+    await expect(
+      page.getByText("Adapt to the app", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("commands stay in lowercase, as spoken"),
+    ).toBeVisible();
+    const toggle = page.getByRole("checkbox", {
+      name: /Adapt to the app you dictate into/,
+    });
+    await expect(toggle).toBeChecked();
+    await flip(toggle);
+    const saved = await page.evaluate(() =>
+      (window as any).__HIKAYA_MOCK__.state.calls.filter(
+        (c: { cmd: string }) => c.cmd === "hikaya_set_prefs",
+      ),
+    );
+    expect(saved).toEqual([
+      {
+        cmd: "hikaya_set_prefs",
+        args: { prefs: { voice_commands: true, adapt_to_app: false } },
+      },
     ]);
   });
 

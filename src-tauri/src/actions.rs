@@ -525,6 +525,12 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+        // Hikaya: note where the text will go, before the overlay shows.
+        crate::hikaya::target::remember(
+            binding_id,
+            app.try_state::<Arc<crate::hikaya::store::LearningStore>>()
+                .is_none_or(|store| store.prefs().adapt_to_app),
+        );
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -746,8 +752,10 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let post_process = self.post_process;
         let cancel_generation = rm.cancel_generation();
+        // Hikaya: this dictation's target app, noted when it started.
+        let target = crate::hikaya::target::take(&binding_id);
 
-        tauri::async_runtime::spawn(async move {
+        tauri::async_runtime::spawn(crate::hikaya::target::scoped(target, async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
             debug!(
                 "Starting async transcription task for binding: {}",
@@ -1057,7 +1065,7 @@ impl ShortcutAction for TranscribeAction {
                     emit_transcription_complete(&ah, TranscriptionOutcome::Empty, 0, stop_time);
                 }
             }
-        });
+        }));
 
         debug!(
             "TranscribeAction::stop completed in {:?}",

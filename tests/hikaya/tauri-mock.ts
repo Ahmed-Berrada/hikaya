@@ -56,7 +56,7 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       };
       const state = {
         rules: [] as Rule[],
-        prefs: { voice_commands: true },
+        prefs: { voice_commands: true, adapt_to_app: true },
         proposals: [...proposals],
         nextId: 1,
         calls: [] as { cmd: string; args: unknown }[],

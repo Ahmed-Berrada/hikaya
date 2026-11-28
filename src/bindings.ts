@@ -1703,7 +1703,11 @@ export type Prefs = {
 /**
  * "New line", "scratch that" and their French forms act as commands.
  */
-voice_commands: boolean }
+voice_commands: boolean; 
+/**
+ * The cleanup and per-app rules follow the app dictated into.
+ */
+adapt_to_app: boolean }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */

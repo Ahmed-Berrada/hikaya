@@ -51,7 +51,7 @@ anyhow = "1.0.95"
 hound = "3.5.1"
 log = "0.4.25"
 env_filter = "0.1.0"
-tokio = { version = "1.43.0", features = ["process"] }
+tokio = { version = "1.43.0", features = ["process", "rt"] }
 earshot = "1.2.2"
 enigo = "0.6.1"
 # Feedback sounds. No `recording`: microphone capture is handy-recorder's.
@@ -79,6 +79,7 @@ isolang = "2"
 chrono = "0.4"
 rusqlite = { version = "0.41", features = ["bundled"] }
 hikaya-core = { path = "../crates/hikaya-core" }
+hikaya-foreground = { path = "../crates/hikaya-foreground" }
 hikaya-capture = { path = "../crates/hikaya-capture" }
 sha2 = "0.10"
 libc = "0.2"
