@@ -5,5 +5,6 @@ pub mod manager;
 pub mod phone;
 pub mod retention;
 pub mod segments;
+pub mod speakers;
 pub mod store;
 pub mod summary;

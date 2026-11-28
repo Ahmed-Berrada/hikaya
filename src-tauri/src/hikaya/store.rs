@@ -146,6 +146,17 @@ const MIGRATIONS: &[M] = &[
         synced INTEGER NOT NULL DEFAULT 0
     );",
     ),
+    // Telling speakers apart (ADR 0005): the voice of a line within its
+    // track, and the names the user gave the voices of a meeting.
+    M::up(
+        "ALTER TABLE meeting_lines ADD COLUMN voice INTEGER;
+    CREATE TABLE meeting_voices (
+        meeting_id INTEGER NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+        voice INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        PRIMARY KEY (meeting_id, voice)
+    );",
+    ),
 ];
 
 /// Hikaya's own preferences, as the UI reads and writes them.
@@ -155,6 +166,8 @@ pub struct Prefs {
     pub voice_commands: bool,
     /// The cleanup and per-app rules follow the app dictated into.
     pub adapt_to_app: bool,
+    /// Beta: after a meeting, split the "Others" track by speaker.
+    pub tell_speakers_apart: bool,
 }
 
 impl Default for Prefs {
@@ -162,6 +175,7 @@ impl Default for Prefs {
         Self {
             voice_commands: true,
             adapt_to_app: true,
+            tell_speakers_apart: false,
         }
     }
 }
@@ -265,18 +279,24 @@ impl LearningStore {
     pub fn prefs(&self) -> Prefs {
         let read = || -> Result<Prefs> {
             let conn = self.conn()?;
-            // Every preference is a switch that is on unless set to false.
-            let on = |key: &str| -> Result<bool> {
+            // Every preference is a switch; a missing one takes its default.
+            let switch = |key: &str, default: bool| -> Result<bool> {
                 let value: Option<String> = conn
                     .query_row("SELECT value FROM prefs WHERE key = ?1", [key], |row| {
                         row.get(0)
                     })
                     .optional()?;
-                Ok(value.as_deref() != Some("false"))
+                Ok(match value.as_deref() {
+                    Some("true") => true,
+                    Some("false") => false,
+                    _ => default,
+                })
             };
+            let defaults = Prefs::default();
             Ok(Prefs {
-                voice_commands: on("voice_commands")?,
-                adapt_to_app: on("adapt_to_app")?,
+                voice_commands: switch("voice_commands", defaults.voice_commands)?,
+                adapt_to_app: switch("adapt_to_app", defaults.adapt_to_app)?,
+                tell_speakers_apart: switch("tell_speakers_apart", defaults.tell_speakers_apart)?,
             })
         };
         read().unwrap_or_else(|e| {
@@ -292,6 +312,7 @@ impl LearningStore {
         for (key, on) in [
             ("voice_commands", prefs.voice_commands),
             ("adapt_to_app", prefs.adapt_to_app),
+            ("tell_speakers_apart", prefs.tell_speakers_apart),
         ] {
             tx.execute(
                 "INSERT INTO prefs (key, value) VALUES (?1, ?2)
@@ -652,14 +673,18 @@ mod tests {
     fn prefs_default_to_voice_commands_on_and_persist() {
         let (_dir, store) = store();
         assert!(store.prefs().voice_commands);
+        // A beta stays off until the user turns it on.
+        assert!(!store.prefs().tell_speakers_apart);
         store
             .set_prefs(Prefs {
                 voice_commands: false,
                 adapt_to_app: true,
+                tell_speakers_apart: true,
             })
             .expect("save");
         assert!(!store.prefs().voice_commands);
         assert!(store.prefs().adapt_to_app);
+        assert!(store.prefs().tell_speakers_apart);
         store.set_prefs(Prefs::default()).expect("save");
         assert!(store.prefs().voice_commands);
     }

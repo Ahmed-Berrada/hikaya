@@ -115,7 +115,7 @@ impl MeetingManager {
         self.lock().as_ref().map(|r| r.info.clone())
     }
 
-    fn emit(app: &AppHandle, id: i64) {
+    pub(crate) fn emit(app: &AppHandle, id: i64) {
         if let Err(e) = app.emit(UPDATED_EVENT, id) {
             log::warn!("Could not notify the UI about meeting {id}: {e}");
         }
@@ -276,6 +276,15 @@ impl MeetingManager {
             if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
                 sync.trigger();
             }
+            MeetingManager::emit(&app, id);
+            // Beta: split the other people's track by voice. The transcript
+            // is already shown and synced; this only improves it, and it
+            // runs before old audio is pruned, since it needs this meeting's.
+            if running.info.system_audio.is_some() && store.prefs().tell_speakers_apart {
+                if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
+                    split_speakers(&app, &store, &meetings, id, &running.info.title);
+                }
+            }
             if let Some(meetings) = app.try_state::<Arc<MeetingManager>>() {
                 if let Err(e) = meetings.prune_audio() {
                     log::warn!("Could not remove old meeting audio: {e:#}");
@@ -297,6 +306,40 @@ impl MeetingManager {
             std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
         }
         Ok(())
+    }
+}
+
+/// Splits a meeting's other people by voice, and tells the user if it
+/// failed. Returns how many voices were found.
+pub fn split_speakers(
+    app: &AppHandle,
+    store: &LearningStore,
+    meetings: &MeetingManager,
+    id: i64,
+    title: &str,
+) -> u32 {
+    let outcome = meetings
+        .audio_dir(id)
+        .and_then(|dir| super::speakers::split(app, store, id, &dir));
+    match outcome {
+        Ok(voices) => {
+            MeetingManager::emit(app, id);
+            if voices >= 2 {
+                if let Some(sync) = app.try_state::<Arc<crate::hikaya::sync_worker::SyncWorker>>() {
+                    sync.trigger();
+                }
+            }
+            voices
+        }
+        Err(e) => {
+            crate::hikaya::problems::report(
+                app,
+                crate::hikaya::problems::Problem::SpeakersFailed,
+                None,
+                format!("{title}: {e:#}"),
+            );
+            0
+        }
     }
 }
 
@@ -345,6 +388,7 @@ fn transcribe_segments(
             end_ms: segment.start_ms + length_ms,
             speaker: segment.speaker,
             text,
+            voice: None,
         };
         match store.add_meeting_line(id, &line) {
             Ok(()) => MeetingManager::emit(app, id),

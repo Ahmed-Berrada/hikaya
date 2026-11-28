@@ -172,15 +172,10 @@ fn speaker_names(app: &AppHandle) -> SpeakerNames {
         .app_language
         .to_lowercase()
         .starts_with("fr");
-    let (you, others, room) = if french {
-        ("Vous", "Autres", "Salle")
+    if french {
+        SpeakerNames::new("Vous", "Autres", "Salle", "Intervenant {n}")
     } else {
-        ("You", "Others", "Room")
-    };
-    SpeakerNames {
-        you: you.into(),
-        others: others.into(),
-        room: room.into(),
+        SpeakerNames::new("You", "Others", "Room", "Speaker {n}")
     }
 }
 
@@ -229,6 +224,7 @@ fn transcribe(
             end_ms: start_ms + ms(part.len()),
             speaker: Speaker::Room,
             text,
+            voice: None,
         });
     }
     if lines.is_empty() {

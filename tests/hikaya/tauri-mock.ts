@@ -56,7 +56,11 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
       };
       const state = {
         rules: [] as Rule[],
-        prefs: { voice_commands: true, adapt_to_app: true },
+        prefs: {
+          voice_commands: true,
+          adapt_to_app: true,
+          tell_speakers_apart: false,
+        },
         snippets: [] as { id: string; cue: string; text: string }[],
         proposals: [...proposals],
         nextId: 1,
@@ -190,8 +194,12 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
               has_summary: !!m.summary,
               line_count: m.lines.length,
             },
-            lines: m.lines,
+            lines: m.lines.map((l: Record<string, unknown>) => ({
+              voice: null,
+              ...l,
+            })),
             summary: m.summary ?? null,
+            voices: m.voices ?? [],
           };
         },
         hikaya_meeting_start: ({ title }) => {
@@ -230,6 +238,25 @@ export const mockTauri = async (page: Page, options: MockOptions = {}) => {
           const id = state.activeMeeting?.id;
           state.activeMeeting = null;
           return id;
+        },
+        hikaya_meeting_split_speakers: ({ id }) => {
+          const m = state.meetings.find((x) => x.id === id);
+          if (!m) throw "no such meeting";
+          // As the backend does: "others" lines get voices, numbered by turn.
+          let n = 0;
+          m.lines = m.lines.map((l: Record<string, unknown>) =>
+            l.speaker === "others" ? { ...l, voice: (n++ % 2) + 1 } : l,
+          );
+          return n > 1 ? 2 : 1;
+        },
+        hikaya_meeting_rename_voice: ({ id, voice, name }) => {
+          const m = state.meetings.find((x) => x.id === id);
+          if (!m) throw "no such meeting";
+          m.voices = (m.voices ?? []).filter(
+            (v: { voice: number }) => v.voice !== voice,
+          );
+          if (name.trim()) m.voices.push({ voice, name: name.trim() });
+          return null;
         },
         hikaya_meeting_summarize: ({ id }) => {
           const m = state.meetings.find((x) => x.id === id);

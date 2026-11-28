@@ -52,6 +52,10 @@ pub struct TranscriptLine {
     pub speaker: Speaker,
     /// What was said.
     pub text: String,
+    /// Which voice within the track, numbered from 1 by first appearance,
+    /// when the track was split by speaker (see `diarize`).
+    #[serde(default)]
+    pub voice: Option<u32>,
 }
 
 /// Lines that start this close together count as the same moment.
@@ -126,14 +130,42 @@ pub struct SpeakerNames {
     pub others: String,
     /// Name for a phone recording's single track, such as "Room".
     pub room: String,
+    /// Name for a voice the user has not named, with `{n}` for its number,
+    /// such as "Speaker {n}".
+    pub voice: String,
+    /// Names the user gave to voices, by number ("Sarah" for 2).
+    pub voices: std::collections::BTreeMap<u32, String>,
 }
 
 impl SpeakerNames {
-    fn name(&self, speaker: Speaker) -> &str {
-        match speaker {
-            Speaker::You => &self.you,
-            Speaker::Others => &self.others,
-            Speaker::Room => &self.room,
+    /// The track names, with voices called "Speaker {n}".
+    pub fn new(you: &str, others: &str, room: &str, voice: &str) -> Self {
+        Self {
+            you: you.into(),
+            others: others.into(),
+            room: room.into(),
+            voice: voice.into(),
+            voices: Default::default(),
+        }
+    }
+
+    /// The name printed for a line: its voice's name when the track was
+    /// split by speaker, else its track's.
+    pub fn label(&self, line: &TranscriptLine) -> String {
+        match line.voice {
+            Some(n) => self
+                .voices
+                .get(&n)
+                .filter(|name| !name.trim().is_empty())
+                .map_or_else(
+                    || self.voice.replace("{n}", &n.to_string()),
+                    |name| name.trim().to_string(),
+                ),
+            None => match line.speaker {
+                Speaker::You => self.you.clone(),
+                Speaker::Others => self.others.clone(),
+                Speaker::Room => self.room.clone(),
+            },
         }
     }
 }
@@ -148,7 +180,7 @@ pub fn plain_transcript(lines: &[TranscriptLine], names: &SpeakerNames) -> Strin
             format!(
                 "[{}] {}: {}",
                 timestamp(l.start_ms),
-                names.name(l.speaker),
+                names.label(l),
                 l.text.trim()
             )
         })
@@ -265,7 +297,7 @@ pub fn to_markdown(export: &MeetingExport<'_>) -> String {
         out.push_str(&format!(
             "**{}** {}: {}\n\n",
             timestamp(l.start_ms),
-            export.names.name(l.speaker),
+            export.names.label(l),
             l.text.trim()
         ));
     }
@@ -295,7 +327,7 @@ pub fn to_srt(lines: &[TranscriptLine], names: &SpeakerNames) -> String {
                 i + 1,
                 srt_time(l.start_ms),
                 srt_time(l.end_ms.max(l.start_ms)),
-                names.name(l.speaker),
+                names.label(l),
                 l.text.trim()
             )
         })
@@ -313,15 +345,25 @@ mod tests {
             end_ms: start_ms + 3_000,
             speaker,
             text: text.into(),
+            voice: None,
         }
     }
 
     fn names() -> SpeakerNames {
-        SpeakerNames {
-            room: "Salle".into(),
-            you: "Vous".into(),
-            others: "Autres".into(),
-        }
+        SpeakerNames::new("Vous", "Autres", "Salle", "Intervenant {n}")
+    }
+
+    #[test]
+    fn a_voice_is_named_by_the_user_or_numbered() {
+        let mut names = names();
+        names.voices.insert(2, " Sarah ".into());
+        let mut l = line(0, Speaker::Others, "Bonjour");
+        assert_eq!(names.label(&l), "Autres");
+        l.voice = Some(1);
+        assert_eq!(names.label(&l), "Intervenant 1");
+        l.voice = Some(2);
+        assert_eq!(names.label(&l), "Sarah");
+        assert!(plain_transcript(&[l], &names).contains("Sarah: Bonjour"));
     }
 
     #[test]
@@ -530,6 +572,7 @@ mod tests {
                 end_ms: 63_000,
                 speaker: Speaker::Others,
                 text: "Hi".into(),
+                voice: None,
             }],
             &names(),
         );

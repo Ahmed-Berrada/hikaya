@@ -842,6 +842,8 @@ pub fn run(cli_args: CliArgs) {
             hikaya::meeting::commands::hikaya_meetings_list,
             hikaya::meeting::commands::hikaya_meeting_get,
             hikaya::meeting::commands::hikaya_meeting_rename,
+            hikaya::meeting::commands::hikaya_meeting_rename_voice,
+            hikaya::meeting::commands::hikaya_meeting_split_speakers,
             hikaya::meeting::commands::hikaya_meeting_delete,
             hikaya::meeting::commands::hikaya_meeting_summarize,
             hikaya::meeting::commands::hikaya_meeting_export,

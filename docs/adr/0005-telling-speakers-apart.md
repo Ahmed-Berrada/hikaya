@@ -1,6 +1,6 @@
 # 0005: Telling speakers apart within a track
 
-- Status: proposed (accuracy passed with `speakrs`; Windows speed to measure)
+- Status: accepted as a beta, off by default (accuracy passed with `speakrs`; Windows speed to measure)
 - Date: 2026-11-18
 
 ## Context
@@ -91,10 +91,27 @@ into the app: speed and installer size on the Windows laptop, in CPU mode and in
 this CPU a 30-minute meeting takes about 20 minutes, which is acceptable for a background step
 after a meeting but not for the two-minute bar; the RTX 4070 should do it in seconds.
 
+## Built as a beta (2026-11-29)
+
+Off by default: **Meetings → Tell speakers apart (beta)**. After a meeting, the "Others" track's
+30-second segments are joined, split by voice with `speakrs` (CPU), and each turn is transcribed
+again; the track's lines are replaced in one transaction by one line per turn ("Speaker 1",
+"Speaker 2"…), and fewer than two voices changes nothing. Voices can be named per meeting; the
+names go into summaries and exports. A past meeting whose audio is kept can be split from its view.
+The models are downloaded on first use from a pinned revision of `avencera/speakrs-models`, each
+file checked against its SHA-256. "You" is never split, as decided, and phone recordings ("Room")
+are not split yet.
+
+On the ProBook the app's own path took 578 s for the first 300 s of ES2004a (3 voices, 26 turns)
+while the CPU was also building and testing, against 1.5× real time for the eval alone. To decide
+whether it can be on by default: the time on the laptop for a 30-minute call, and CUDA
+(`speakrs/cuda-rtx40`) if the CPU is too slow. Not yet synced: the names given to voices stay on
+the computer (lines keep their voice number on the hub).
+
 ## Consequences
 
 - Summaries and action items can name people, and exports become readable for calls with several
   people.
-- A second native runtime in the app (ONNX Runtime beside GGML), with its own updates and
-  advisories to follow.
+- No second runtime: `speakrs` runs on its own CPU kernels (27 more crates in the app, mostly
+  `ndarray` and `rayon`); CUDA would add the NVIDIA libraries, loaded at run time.
 - Echo removal (ADR 0003) still works on tracks, before diarization, so it is unaffected.

@@ -91,11 +91,7 @@ impl Llm for Ollama {
 
 /// Summarizes a transcript: each part, then the parts together.
 pub fn summarize(llm: &dyn Llm, lines: &[TranscriptLine]) -> Result<String> {
-    let names = SpeakerNames {
-        you: "You".into(),
-        others: "Others".into(),
-        room: "Room".into(),
-    };
+    let names = SpeakerNames::new("You", "Others", "Room", "Speaker {n}");
     let mut parts = Vec::new();
     for prompt in summary_prompts(lines, &names) {
         parts.push(llm.ask(&prompt)?);
@@ -142,6 +138,7 @@ pub fn take_next(
             end_ms: l.end_ms,
             speaker: Speaker::parse(&l.speaker),
             text: l.text,
+            voice: l.voice,
         })
         .collect();
     Ok(Some((id, lines)))

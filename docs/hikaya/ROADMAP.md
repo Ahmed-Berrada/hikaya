@@ -89,8 +89,8 @@ comes with meetings).
 Done: two tracks (WASAPI loopback on Windows, PipeWire monitor on Linux), crash-safe segments,
 transcription while recording, echo removal, summaries with the configured provider, Markdown and
 SRT export, consent reminder (ADR 0003), sync to the hub as text, audio retention, and a tray line
-with Stop. Left: speakers beyond You/Others/Room (proposed in ADR 0005, to measure first), and the Windows hand
-check.
+with Stop. Speakers beyond You/Others: a beta, off by default (ADR 0005), to time on the laptop. Left: the
+Windows hand check, splitting phone recordings, and syncing voice names.
 
 ### v0.5: Phone capture (recording done)
 

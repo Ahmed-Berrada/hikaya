@@ -80,6 +80,9 @@ chrono = "0.4"
 rusqlite = { version = "0.41", features = ["bundled"] }
 hikaya-core = { path = "../crates/hikaya-core" }
 hikaya-foreground = { path = "../crates/hikaya-foreground" }
+# Telling speakers apart in meetings (ADR 0005): pyannote community-1 in Rust,
+# native CPU kernels, no ONNX Runtime. Models are downloaded on first use.
+speakrs = { version = "=0.8.0", default-features = false, features = ["cpu"] }
 hikaya-capture = { path = "../crates/hikaya-capture" }
 sha2 = "0.10"
 libc = "0.2"

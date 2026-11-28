@@ -126,6 +126,50 @@ test.describe("Meetings screen", () => {
     await expect(page.getByText("On se retrouve jeudi.")).toBeVisible();
   });
 
+  test("tells speakers apart on a past meeting and names them", async ({
+    page,
+  }) => {
+    const twoOthers = {
+      ...PAST,
+      lines: [
+        { start_ms: 0, end_ms: 5000, speaker: "others", text: "On décale ?" },
+        {
+          start_ms: 5000,
+          end_ms: 9000,
+          speaker: "others",
+          text: "Oui, jeudi.",
+        },
+        { start_ms: 9000, end_ms: 12000, speaker: "you", text: "Parfait." },
+      ],
+    };
+    await mockTauri(page, { meetings: [twoOthers] });
+    await openMeetings(page);
+    await page.getByText("Point produit").click();
+    await page.getByRole("button", { name: "Tell speakers apart" }).click();
+    await expect(page.getByText("Speaker 1:")).toBeVisible();
+    await expect(page.getByText("Speaker 2:")).toBeVisible();
+    await expect(page.getByText("You:")).toBeVisible();
+    // Once split, the button goes and the voices can be named.
+    await expect(
+      page.getByRole("button", { name: "Tell speakers apart" }),
+    ).toBeHidden();
+    await page.getByLabel("Name of speaker 2").fill("Sarah");
+    await page.getByLabel("Name of speaker 2").press("Enter");
+    await expect(page.getByText("Sarah:")).toBeVisible();
+    await expect(page.getByText("Speaker 1:")).toBeVisible();
+  });
+
+  test("the speakers beta is off until turned on", async ({ page }) => {
+    await mockTauri(page);
+    await openMeetings(page);
+    const toggle = page.getByRole("checkbox", {
+      name: /Tell speakers apart \(beta\)/,
+    });
+    await expect(toggle).not.toBeChecked();
+    await toggle.locator("xpath=..").click();
+    await expect(toggle).toBeChecked();
+  });
+
   test("renames and deletes a meeting after confirmation", async ({ page }) => {
     await mockTauri(page, { meetings: [PAST] });
     await openMeetings(page);

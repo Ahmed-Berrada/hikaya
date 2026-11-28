@@ -61,9 +61,18 @@ pub struct MeetingSummary {
 pub struct MeetingLine {
     pub start_ms: i64,
     pub end_ms: i64,
-    /// `you` or `others`.
+    /// `you`, `others` or `room`.
     pub speaker: String,
     pub text: String,
+    /// The voice within the track, when it was split by speaker.
+    pub voice: Option<u32>,
+}
+
+/// A name the user gave one voice of a meeting.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Type)]
+pub struct VoiceName {
+    pub voice: u32,
+    pub name: String,
 }
 
 /// A meeting with its whole transcript.
@@ -72,6 +81,8 @@ pub struct MeetingDetail {
     pub meeting: MeetingSummary,
     pub lines: Vec<MeetingLine>,
     pub summary: Option<String>,
+    /// Names the user gave the meeting's voices.
+    pub voices: Vec<VoiceName>,
 }
 
 const SUMMARY_COLUMNS: &str =
@@ -192,14 +203,15 @@ impl LearningStore {
             return Ok(());
         }
         self.conn()?.execute(
-            "INSERT INTO meeting_lines (meeting_id, start_ms, end_ms, speaker, text)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO meeting_lines (meeting_id, start_ms, end_ms, speaker, text, voice)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 meeting_id,
                 line.start_ms,
                 line.end_ms,
                 line.speaker.as_str(),
-                line.text.trim()
+                line.text.trim(),
+                line.voice
             ],
         )?;
         Ok(())
@@ -256,7 +268,7 @@ impl LearningStore {
     pub fn meeting_lines(&self, id: i64) -> Result<Vec<TranscriptLine>> {
         let conn = self.conn()?;
         let mut statement = conn.prepare(
-            "SELECT start_ms, end_ms, speaker, text FROM meeting_lines WHERE meeting_id = ?1",
+            "SELECT start_ms, end_ms, speaker, text, voice FROM meeting_lines WHERE meeting_id = ?1",
         )?;
         let lines = statement
             .query_map(params![id], |row| {
@@ -265,6 +277,7 @@ impl LearningStore {
                     end_ms: row.get(1)?,
                     speaker: Speaker::parse(&row.get::<_, String>(2)?),
                     text: row.get(3)?,
+                    voice: row.get(4)?,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -293,13 +306,102 @@ impl LearningStore {
                 end_ms: l.end_ms,
                 speaker: l.speaker.as_str().to_string(),
                 text: l.text,
+                voice: l.voice,
             })
+            .collect();
+        let voices = self
+            .voice_names(id)?
+            .into_iter()
+            .map(|(voice, name)| VoiceName { voice, name })
             .collect();
         Ok(Some(MeetingDetail {
             meeting,
             lines,
             summary,
+            voices,
         }))
+    }
+
+    /// Names the user gave a meeting's voices.
+    pub fn voice_names(&self, id: i64) -> Result<std::collections::BTreeMap<u32, String>> {
+        let conn = self.conn()?;
+        let mut statement =
+            conn.prepare("SELECT voice, name FROM meeting_voices WHERE meeting_id = ?1")?;
+        let names = statement
+            .query_map(params![id], |row| {
+                Ok((row.get::<_, u32>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(names)
+    }
+
+    /// Names a voice ("Speaker 2" → "Sarah"); an empty name goes back to the
+    /// number. The meeting is sent to the hub again.
+    pub fn rename_voice(&self, id: i64, voice: u32, name: &str) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        let name = name.trim();
+        if name.is_empty() {
+            tx.execute(
+                "DELETE FROM meeting_voices WHERE meeting_id = ?1 AND voice = ?2",
+                params![id, voice],
+            )?;
+        } else {
+            tx.execute(
+                "INSERT INTO meeting_voices (meeting_id, voice, name) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (meeting_id, voice) DO UPDATE SET name = ?3",
+                params![id, voice, name],
+            )?;
+        }
+        tx.execute(
+            "UPDATE meetings SET updated_at = ?2, synced = 0 WHERE id = ?1",
+            params![id, now_ms()],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Replaces a track's lines with lines split by speaker, in one step,
+    /// so the transcript is never seen half done. The meeting is sent to the
+    /// hub again.
+    pub fn replace_track_lines(
+        &self,
+        id: i64,
+        speaker: Speaker,
+        lines: &[TranscriptLine],
+    ) -> Result<()> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM meeting_lines WHERE meeting_id = ?1 AND speaker = ?2",
+            params![id, speaker.as_str()],
+        )?;
+        // A new split numbers the voices afresh, so an old name could land
+        // on another person.
+        tx.execute(
+            "DELETE FROM meeting_voices WHERE meeting_id = ?1",
+            params![id],
+        )?;
+        for line in lines.iter().filter(|l| !l.text.trim().is_empty()) {
+            tx.execute(
+                "INSERT INTO meeting_lines (meeting_id, start_ms, end_ms, speaker, text, voice)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    id,
+                    line.start_ms,
+                    line.end_ms,
+                    line.speaker.as_str(),
+                    line.text.trim(),
+                    line.voice
+                ],
+            )?;
+        }
+        tx.execute(
+            "UPDATE meetings SET updated_at = ?2, synced = 0 WHERE id = ?1",
+            params![id, now_ms()],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     /// Deletes a meeting and its transcript. The caller removes the audio.
@@ -343,7 +445,61 @@ mod tests {
             end_ms: start_ms + 2_000,
             speaker,
             text: text.into(),
+            voice: None,
         }
+    }
+
+    #[test]
+    fn a_track_split_by_speaker_replaces_its_lines_and_voices_get_names() {
+        let (_dir, store) = store();
+        let id = store.create_meeting("Weekly", 1, true).expect("meeting");
+        store
+            .add_meeting_line(id, &line(0, Speaker::You, "Quick update from me"))
+            .expect("line");
+        store
+            .add_meeting_line(id, &line(0, Speaker::Others, "Hi, and hello"))
+            .expect("line");
+        let split = [
+            TranscriptLine {
+                voice: Some(1),
+                ..line(500, Speaker::Others, "Hi,")
+            },
+            TranscriptLine {
+                voice: Some(2),
+                ..line(1_500, Speaker::Others, "and hello")
+            },
+        ];
+        store
+            .replace_track_lines(id, Speaker::Others, &split)
+            .expect("replace");
+        let lines = store.meeting_lines(id).expect("lines");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines.iter().filter(|l| l.speaker == Speaker::You).count(),
+            1
+        );
+        assert_eq!(
+            lines.iter().filter_map(|l| l.voice).collect::<Vec<_>>(),
+            [1, 2]
+        );
+
+        store.rename_voice(id, 2, " Sarah ").expect("name");
+        let detail = store.meeting_detail(id).expect("detail").expect("found");
+        assert_eq!(
+            detail.voices,
+            [VoiceName {
+                voice: 2,
+                name: "Sarah".into()
+            }]
+        );
+        store.rename_voice(id, 2, "").expect("unname");
+        assert!(store.voice_names(id).expect("names").is_empty());
+        // Splitting again forgets the names: the numbers may mean others.
+        store.rename_voice(id, 1, "Marc").expect("name");
+        store
+            .replace_track_lines(id, Speaker::Others, &split)
+            .expect("again");
+        assert!(store.voice_names(id).expect("names").is_empty());
     }
 
     #[test]

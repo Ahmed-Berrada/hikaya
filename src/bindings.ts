@@ -1202,6 +1202,31 @@ async hikayaMeetingRename(id: number, title: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Names one voice of a meeting ("Speaker 2" → "Sarah"). An empty name
+ * goes back to the number.
+ */
+async hikayaMeetingRenameVoice(id: number, voice: number, name: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_rename_voice", { id, voice, name }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Splits a past meeting's other people by voice, when its audio is still
+ * kept. Returns how many voices were found (fewer than two changes
+ * nothing).
+ */
+async hikayaMeetingSplitSpeakers(id: number) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_split_speakers", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async hikayaMeetingDelete(id: number) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_delete", { id }) };
@@ -1213,9 +1238,9 @@ async hikayaMeetingDelete(id: number) : Promise<Result<null, string>> {
 /**
  * Summarizes a meeting with the post-processing provider and saves it.
  */
-async hikayaMeetingSummarize(id: number, you: string, others: string, room: string) : Promise<Result<string, string>> {
+async hikayaMeetingSummarize(id: number, you: string, others: string, room: string, voice: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_summarize", { id, you, others, room }) };
+    return { status: "ok", data: await TAURI_INVOKE("hikaya_meeting_summarize", { id, you, others, room, voice }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1496,7 +1521,11 @@ export type ExportFormat = "markdown" | "srt"
 /**
  * Words the export uses, in the UI's language.
  */
-export type ExportLabels = { you: string; others: string; room: string; summary: string; transcript: string; 
+export type ExportLabels = { you: string; others: string; room: string; 
+/**
+ * A voice the user has not named, with `{n}` for its number.
+ */
+voice: string; summary: string; transcript: string; 
 /**
  * The meeting's start, already formatted for the user.
  */
@@ -1603,15 +1632,23 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**
  * A meeting with its whole transcript.
  */
-export type MeetingDetail = { meeting: MeetingSummary; lines: MeetingLine[]; summary: string | null }
+export type MeetingDetail = { meeting: MeetingSummary; lines: MeetingLine[]; summary: string | null; 
+/**
+ * Names the user gave the meeting's voices.
+ */
+voices: VoiceName[] }
 /**
  * One transcript line as sent to the UI.
  */
 export type MeetingLine = { start_ms: number; end_ms: number; 
 /**
- * `you` or `others`.
+ * `you`, `others` or `room`.
  */
-speaker: string; text: string }
+speaker: string; text: string; 
+/**
+ * The voice within the track, when it was split by speaker.
+ */
+voice: number | null }
 /**
  * Where a meeting is in its life.
  */
@@ -1740,7 +1777,11 @@ voice_commands: boolean;
 /**
  * The cleanup and per-app rules follow the app dictated into.
  */
-adapt_to_app: boolean }
+adapt_to_app: boolean; 
+/**
+ * Beta: after a meeting, split the "Others" track by speaker.
+ */
+tell_speakers_apart: boolean }
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
@@ -2014,6 +2055,10 @@ export type TranscriptionOutcome =
 "failed"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
+/**
+ * A name the user gave one voice of a meeting.
+ */
+export type VoiceName = { voice: number; name: string }
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
 
 /** tauri-specta globals **/
